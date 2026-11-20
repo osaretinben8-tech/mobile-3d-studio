@@ -77,4 +77,4 @@ $('resetBtn').onclick=()=>{if(!confirm('clear the current scene?'))return;object
 try{const saved=JSON.parse(localStorage.getItem('m3dstudio-project')||'null');if(saved?.objects?.length){saved.objects.forEach(data=>{make(data.geometry==='SphereGeometry'?'Sphere':data.geometry==='CylinderGeometry'?'Cylinder':data.geometry==='ConeGeometry'?'Cone':data.geometry==='TorusGeometry'?'Torus':'Box');const o=selected;o.userData.name=data.name;o.position.fromArray(data.position);o.rotation.set(...data.rotation);o.scale.fromArray(data.scale);o.material.color.set(data.colour);o.material.roughness=data.roughness;o.material.metalness=data.metalness;keys[o.uuid]=data.keys||[]});scene.background.set(saved.background||'#101722');renderList();renderKeys()}else make('Box')}catch(e){make('Box')}
 $('status').textContent='webgl ready · local scene';window.addEventListener('resize',resize);resize();
 })();
-</script></body></html>
+</script><script>if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').catch(()=>{}))}</script></body></html>
