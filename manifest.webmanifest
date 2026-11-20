@@ -1,0 +1,12 @@
+{
+  "name": "Mobile 3D Studio",
+  "short_name": "3D Studio",
+  "description": "A touch-first 3D scene and animation studio.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#10131b",
+  "theme_color": "#10131b",
+  "icons": []
+}
