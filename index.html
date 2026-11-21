@@ -13,7 +13,7 @@
 </style>
 </head>
 <body><div class="app">
-<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v53</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
+<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v54</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
 <main class="workspace"><section class="view"><canvas id="viewport"></canvas><div class="hint" id="hint">drag to orbit · pinch to zoom · tap an object to select</div><div class="toolbar"><button data-add="Box">＋ box</button><button data-add="Sphere">＋ sphere</button><button data-add="Cylinder">＋ cylinder</button><button data-add="Cone">＋ cone</button><button data-add="Torus">＋ torus</button><button id="focusBtn">focus</button></div></section>
 <aside class="side">
 <section class="section"><h3>scene objects</h3><div class="objects" id="objectList"></div><label>collections · organise your scene</label><div class="row"><select id="collectionSelect" aria-label="active collection"></select><button id="createCollectionBtn">＋ group</button></div><div class="grid2" style="margin-top:6px"><button id="assignCollectionBtn">move selection here</button><button id="renameCollectionBtn">rename group</button><button id="deleteCollectionBtn">delete group</button></div><div class="collection-list" id="collectionList"></div><div class="small">new objects go into the selected collection · use the eye button to hide or show a whole group</div><label for="parentSelect">parent selected object to</label><div class="row"><select id="parentSelect"><option value="">no parent · scene root</option></select><button id="unparentBtn">unparent</button></div><div class="small">parenting keeps the current world position; moving a parent also moves its children</div><div class="grid2" style="margin-top:7px"><button id="multiSelectBtn">multi-select: off</button><button id="clearSelectionBtn">clear selection</button><button id="duplicateBtn">duplicate</button><button id="deleteBtn">delete</button></div><div class="small" id="selectionInfo">select one object</div><div class="grid2" style="margin-top:7px"><button id="outlineVisibilityBtn">hide object outline</button><button id="outlineThicknessBtn">outline thickness: thin</button></div></section>
@@ -200,8 +200,9 @@ const adjacency=new Map();for(const e of boundary){const [a,b]=e.split('|');if(!
 const first=boundary[0].split('|')[0],ordered=[first];let prev=null,current=first;
 for(let n=0;n<4;n++){const next=(adjacency.get(current)||[]).find(x=>x!==prev&&!(n===3&&x!==first));if(!next)break;if(next===first)break;ordered.push(next);prev=current;current=next}
 if(ordered.length!==4){$('editInfo').textContent='could not trace a clean quad face boundary';return}
-const face={keys:ordered,points,edges:boundary};faces.push(face);
-for(const e of boundary){if(!edgeFaces.has(e))edgeFaces.set(e,[]);edgeFaces.get(e).push(fi)}
+const orderedEdges=ordered.map((key,i)=>keyOf(key,ordered[(i+1)%4]));
+const face={keys:ordered,points,edges:orderedEdges};faces.push(face);
+for(const e of orderedEdges){if(!edgeFaces.has(e))edgeFaces.set(e,[]);edgeFaces.get(e).push(fi)}
 }
 const startKey=keyOf(selectedEdge.a,selectedEdge.b),adjacent=edgeFaces.get(startKey)||[];
 if(adjacent.length!==2){$('editInfo').textContent='choose an edge shared by two quad faces';return}
@@ -224,7 +225,7 @@ for(const [fi,f] of faces.entries()){
 const cut=[...cuts.values()].find(c=>c.face===fi);
 if(!cut)continue;
 const i=f.edges.indexOf(cut.enter),j=f.edges.indexOf(cut.opposite);
-if(i<0||j<0)continue;
+if(i<0||j<0||((i+2)%4)!==j)continue;
 const midA=cut.a.split(',').map(Number),midB=cut.b.split(',').map(Number);
 const v=f.keys,poly1=[midA,f.points.get(v[(i+1)%4]),f.points.get(v[(i+2)%4]),midB],poly2=[midB,f.points.get(v[(j+1)%4]),f.points.get(v[(j+2)%4]),midA];
 splitFaces.set(fi,[poly1,poly2]);
