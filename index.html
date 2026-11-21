@@ -71,6 +71,10 @@ const edgeMap=new Map();for(let i=0;i<pos.count;i+=3){const ax=pos.getX(i),ay=po
 edgeRecords=[...edgeMap.values()].filter(e=>e.normals.length===1||e.normals.some(n=>n[0]*e.normals[0][0]+n[1]*e.normals[0][1]+n[2]*e.normals[0][2]<.9999));
 faceRecords=[];triangleFaceMap=new Array(Math.floor(pos.count/3));const faceMap=new Map();for(let i=0;i<pos.count;i+=3){const ax=pos.getX(i),ay=pos.getY(i),az=pos.getZ(i),bx=pos.getX(i+1),by=pos.getY(i+1),bz=pos.getZ(i+1),cx=pos.getX(i+2),cy=pos.getY(i+2),cz=pos.getZ(i+2),ux=bx-ax,uy=by-ay,uz=bz-az,vx=cx-ax,vy=cy-ay,vz=cz-az,nx=uy*vz-uz*vy,ny=uz*vx-ux*vz,nz=ux*vy-uy*vx,len=Math.hypot(nx,ny,nz)||1,n=[nx/len,ny/len,nz/len],d=n[0]*ax+n[1]*ay+n[2]*az,key=[...n.map(v=>v.toFixed(4)),d.toFixed(4)].join(',');let f=faceMap.get(key);if(!f){f={ids:[],triangles:[]};faceMap.set(key,f)}f.ids.push(i,i+1,i+2);f.triangles.push(i/3);triangleFaceMap[i/3]=f}
 faceRecords=[...faceMap.values()];
+const storedLoops=selected.geometry.userData?.faceLoops;
+if(Array.isArray(storedLoops)&&storedLoops.length){
+faceRecords=storedLoops.map(loop=>{const f={ids:[],triangles:[]};for(let t=loop.triangleStart;t<loop.triangleStart+loop.triangleCount;t++){f.triangles.push(t);f.ids.push(t*3,t*3+1,t*3+2);triangleFaceMap[t]=f}return f});
+}
 if(componentMode==='edge'){editEdges=new THREE.Group();editEdges.renderOrder=9000;const material=new THREE.MeshBasicMaterial({color:0x28dfff,depthTest:false,depthWrite:false,toneMapped:false});edgeRecords.forEach(e=>{const a=new THREE.Vector3(...e.a.split(',').map(Number)),b=new THREE.Vector3(...e.b.split(',').map(Number)),delta=new THREE.Vector3().subVectors(b,a),length=delta.length();if(length<1e-5)return;const rod=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,1,8),material);rod.position.copy(a).add(b).multiplyScalar(.5);rod.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());rod.scale.y=length;rod.renderOrder=9000;editEdges.add(rod)});selected.add(editEdges)}else if(componentMode==='face'){const coords=[];edgeRecords.forEach(e=>coords.push(...e.a.split(',').map(Number),...e.b.split(',').map(Number)));const eg=new THREE.BufferGeometry();eg.setAttribute('position',new THREE.Float32BufferAttribute(coords,3));editEdges=new THREE.LineSegments(eg,new THREE.LineBasicMaterial({color:0x8290a8,transparent:true,opacity:.55,depthTest:false,depthWrite:false}));editEdges.renderOrder=7;selected.add(editEdges)}
 updateEditSelectionVisual()}
 function updateEditSelectionVisual(){if(!editMode||!selected)return;disposeEditObject(editOverlay);editOverlay=null;const pos=selected.geometry.attributes.position;if(componentMode==='vertex'){const pts=[];editSelection.forEach(i=>{if(i<pos.count)pts.push(pos.getX(i),pos.getY(i),pos.getZ(i))});if(!pts.length)return;const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(pts,3));g.computeBoundingSphere();editOverlay=new THREE.Points(g,new THREE.PointsMaterial({color:0xff7900,size:.22,sizeAttenuation:true,depthTest:false,toneMapped:false}));editOverlay.renderOrder=9001;editOverlay.frustumCulled=false;selected.add(editOverlay);return}
@@ -224,18 +228,18 @@ const v=f.keys,poly1=[midA,f.points.get(v[(i+1)%4]),f.points.get(v[(i+2)%4]),mid
 splitFaces.set(fi,[poly1,poly2]);
 }
 if(splitFaces.size!==cuts.size){$('editInfo').textContent='could not map every cut onto its quad face';return}
-const values=[];
+const values=[],faceLoops=[];
 for(let fi=0;fi<faces.length;fi++){
 const f=faces[fi],polys=splitFaces.get(fi)||[[...f.keys.map(k=>f.points.get(k))]];
-for(const poly of polys)for(let k=1;k<poly.length-1;k++)values.push(...poly[0],...poly[k],...poly[k+1]);
+for(const poly of polys){const triangleStart=values.length/9;for(let k=1;k<poly.length-1;k++)values.push(...poly[0],...poly[k],...poly[k+1]);faceLoops.push({triangleStart,triangleCount:poly.length-2})}
 }
-const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(values,3));geometry.computeVertexNormals();geometry.computeBoundingSphere();
+const geometry=new THREE.BufferGeometry();geometry.setAttribute('position',new THREE.Float32BufferAttribute(values,3));geometry.userData.faceLoops=faceLoops;geometry.computeVertexNormals();geometry.computeBoundingSphere();
 selected.geometry.dispose();selected.geometry=geometry;editSelection=[];activeEdgeIndex=-1;buildEditVisuals();
 const cutEdges=[...cuts.values()],endpointMap=new Map();
 cutEdges.forEach((e,i)=>{for(const key of [e.a,e.b]){if(!endpointMap.has(key))endpointMap.set(key,[]);endpointMap.get(key).push(i)}});
 const groups=[],seen=new Set();
 for(let i=0;i<cutEdges.length;i++){if(seen.has(i))continue;const group=[],stack=[i];seen.add(i);while(stack.length){const n=stack.pop();group.push(n);for(const key of [cutEdges[n].a,cutEdges[n].b])for(const other of endpointMap.get(key)||[])if(!seen.has(other)){seen.add(other);stack.push(other)}}groups.push(group)}
-groups.forEach((group,gid)=>group.forEach(i=>{const cut=cutEdges[i],idx=edgeRecords.findIndex(e=>keyOf(e.a,e.b)===keyOf(cut.a,cut.b));if(idx>=0){edgeRecords[idx].loopGroup=gid;if(!editSelection.includes(idx))editSelection.push(idx)}}));
+groups.forEach((group,gid)=>group.forEach(i=>{const cut=cutEdges[i];let idx=edgeRecords.findIndex(e=>keyOf(e.a,e.b)===keyOf(cut.a,cut.b));if(idx<0){idx=edgeRecords.length;edgeRecords.push({a:cut.a,b:cut.b,idsA:[],idsB:[],normals:[],loopGroup:gid});const a=new THREE.Vector3(...cut.a.split(',').map(Number)),b=new THREE.Vector3(...cut.b.split(',').map(Number)),delta=new THREE.Vector3().subVectors(b,a),length=delta.length();if(editEdges&&length>1e-5){const rod=new THREE.Mesh(new THREE.CylinderGeometry(.018,.018,1,8),new THREE.MeshBasicMaterial({color:0x28dfff,depthTest:false,depthWrite:false,toneMapped:false}));rod.position.copy(a).add(b).multiplyScalar(.5);rod.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize());rod.scale.y=length;rod.renderOrder=9000;editEdges.add(rod)}}else edgeRecords[idx].loopGroup=gid;if(!editSelection.includes(idx))editSelection.push(idx)}));
 componentMode='edge';document.querySelectorAll('[data-component]').forEach(x=>x.classList.toggle('active',x.dataset.component==='edge'));
 updateEditSelectionVisual();$('editInfo').textContent='loop cut added · '+cuts.size+' connected segments · tap one segment to choose the next cut';
 $('editDebug').textContent='quad topology · '+splitFaces.size+' faces cut · '+geometry.attributes.position.count/3+' triangles';
