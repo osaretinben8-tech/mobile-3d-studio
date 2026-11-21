@@ -207,7 +207,7 @@ const opposite=f.edges.find(e=>{const parts=e.split('|');return !enterParts.some
 if(!opposite){$('editInfo').textContent='could not find the opposite edge in a quad';return}
 const edgeMid=e=>{const [a,b]=e.split('|'),pa=f.points.get(a),pb=f.points.get(b);return pa.map((v,k)=>(v+pb[k])*.5)};
 const a=edgeMid(enter),b=edgeMid(opposite),ka=pointKey(a),kb=pointKey(b);
-cuts.set(keyOf(ka,kb),{a:ka,b:kb});
+cuts.set(keyOf(ka,kb),{a:ka,b:kb,enter,opposite,face:fi});
 const neighbors=(edgeFaces.get(opposite)||[]).filter(x=>x!==fi);
 if(!neighbors.length)continue;
 for(const next of neighbors){if(next===adjacent[0]||next===adjacent[1]){if(opposite===startKey)continue}queue.push({face:next,enter:opposite})}
@@ -215,11 +215,11 @@ for(const next of neighbors){if(next===adjacent[0]||next===adjacent[1]){if(oppos
 if(!cuts.size){$('editInfo').textContent='no valid quad loop found from that edge';return}
 const splitFaces=new Map();
 for(const [fi,f] of faces.entries()){
-const cut=[...cuts.values()].find(c=>{const ends=[c.a,c.b];return f.edges.some(e=>e===keyOf(...ends))});
+const cut=[...cuts.values()].find(c=>c.face===fi);
 if(!cut)continue;
-const cutEnds=[cut.a,cut.b],edgeIndices=cutEnds.map(k=>f.edges.findIndex(e=>e===k));
-if(edgeIndices.some(x=>x<0))continue;
-const i=edgeIndices[0],j=edgeIndices[1],midA=cutEnds[0].split(',').map(Number),midB=cutEnds[1].split(',').map(Number);
+const i=f.edges.indexOf(cut.enter),j=f.edges.indexOf(cut.opposite);
+if(i<0||j<0)continue;
+const midA=cut.a.split(',').map(Number),midB=cut.b.split(',').map(Number);
 const v=f.keys,poly1=[midA,f.points.get(v[(i+1)%4]),f.points.get(v[(i+2)%4]),midB],poly2=[midB,f.points.get(v[(j+1)%4]),f.points.get(v[(j+2)%4]),midA];
 splitFaces.set(fi,[poly1,poly2]);
 }
