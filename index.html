@@ -179,7 +179,7 @@ function loopCutSelectedEdge(){
 if(!editMode||componentMode!=='edge'||!selected||editSelection.length!==1){$('editInfo').textContent='select exactly one edge in edge mode to loop cut';return}
 const edge=edgeRecords[editSelection[0]],pos=selected.geometry.attributes.position;
 if(!edge)return;
-if(faceRecords.length!==6||edgeRecords.length!==12){$('editInfo').textContent='loop cut currently supports an untouched box mesh · create/select a clean box';return}
+if(!faceRecords.length||!edgeRecords.length){$('editInfo').textContent='loop cut needs a valid mesh with selectable edges';return}
 for(const face of faceRecords){
 const counts=new Map(),points=new Map();
 face.triangles.forEach(ti=>{const base=ti*3;for(let j=0;j<3;j++){
