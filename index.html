@@ -199,7 +199,7 @@ for(const e of boundary){if(!edgeFaces.has(e))edgeFaces.set(e,[]);edgeFaces.get(
 }
 const startKey=keyOf(selectedEdge.a,selectedEdge.b),adjacent=edgeFaces.get(startKey)||[];
 if(adjacent.length!==2){$('editInfo').textContent='choose an edge shared by two quad faces';return}
-const cuts=new Map(),visited=new Set(),queue=adjacent.map(fi=>({face:fi,enter:startKey}));
+const cuts=new Map(),visited=new Set(),queue=[{face:adjacent[0],enter:startKey}];
 while(queue.length){
 const {face:fi,enter}=queue.shift(),state=fi+'|'+enter;if(visited.has(state))continue;visited.add(state);
 const f=faces[fi],enterParts=enter.split('|');
@@ -210,7 +210,7 @@ const a=edgeMid(enter),b=edgeMid(opposite),ka=pointKey(a),kb=pointKey(b);
 cuts.set(keyOf(ka,kb),{a:ka,b:kb,enter,opposite,face:fi});
 const neighbors=(edgeFaces.get(opposite)||[]).filter(x=>x!==fi);
 if(!neighbors.length)continue;
-for(const next of neighbors){if(next===adjacent[0]||next===adjacent[1]){if(opposite===startKey)continue}queue.push({face:next,enter:opposite})}
+for(const next of neighbors){if(opposite===startKey)continue;queue.push({face:next,enter:opposite})}
 }
 if(!cuts.size){$('editInfo').textContent='no valid quad loop found from that edge';return}
 const splitFaces=new Map();
