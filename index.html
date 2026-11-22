@@ -294,13 +294,14 @@ $('resetBtn').onclick=()=>{if(!confirm('clear the current scene?'))return;clearS
 try{const saved=JSON.parse(localStorage.getItem('m3dstudio-project')||'null');if(saved?.objects?.length)loadProject(saved);else make('Box')}catch(e){make('Box')}
 const undoStack=[],redoStack=[];let historyBusy=false,historyBefore=null;
 function historySnapshot(){return JSON.stringify({project:project(),cameraPosition:camera.position.toArray(),cameraTarget:cameraTarget.toArray(),time:Number($('time').value)})}
-function restoreHistory(snapshot){const state=JSON.parse(snapshot);historyBusy=true;loadProject(state.project);cameraTarget.fromArray(state.cameraTarget);camera.position.fromArray(state.cameraPosition);syncOrbit();camera.lookAt(cameraTarget);setTime(state.time||0);historyBusy=false;renderTransform();renderKeys()}
-function captureHistoryBefore(){if(historyBusy)return;try{historyBefore=historySnapshot()}catch(e){historyBefore=null}}
+function restoreHistory(snapshot){const state=JSON.parse(snapshot);if(editMode)exitEdit();historyBusy=true;loadProject(state.project);cameraTarget.fromArray(state.cameraTarget);camera.position.fromArray(state.cameraPosition);syncOrbit();camera.lookAt(cameraTarget);setTime(state.time||0);historyBusy=false;renderTransform();renderKeys()}
+function captureHistoryBefore(){if(historyBusy||historyBefore!==null)return;try{historyBefore=historySnapshot()}catch(e){historyBefore=null}}
 function commitHistory(){if(historyBusy||!historyBefore)return;try{const after=historySnapshot();if(after!==historyBefore){undoStack.push(historyBefore);if(undoStack.length>50)undoStack.shift();redoStack.length=0;updateHistoryButtons()}}catch(e){}historyBefore=null}
 function updateHistoryButtons(){$('undoBtn').disabled=!undoStack.length;$('redoBtn').disabled=!redoStack.length}
 $('undoBtn').onclick=()=>{if(!undoStack.length)return;const current=historySnapshot(),previous=undoStack.pop();redoStack.push(current);restoreHistory(previous);updateHistoryButtons()};
 $('redoBtn').onclick=()=>{if(!redoStack.length)return;const current=historySnapshot(),next=redoStack.pop();undoStack.push(current);restoreHistory(next);updateHistoryButtons()};
 document.addEventListener('click',e=>{if(e.target.closest('#undoBtn,#redoBtn,.section-title'))return;if(!e.target.closest('.side,.toolbar,.top,.timeline'))return;captureHistoryBefore();queueMicrotask(commitHistory)},true);
+document.addEventListener('focusin',e=>{if(e.target.closest('#transformControls'))captureHistoryBefore()},true);
 document.addEventListener('input',e=>{if(!e.target.closest('#transformControls,#editControls,#colour,#roughness,#metalness'))return;captureHistoryBefore();queueMicrotask(commitHistory)},true);
 updateHistoryButtons();
 $('status').textContent='webgl ready · local scene';window.addEventListener('resize',resize);resize();
