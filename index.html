@@ -19,7 +19,7 @@
 </style>
 </head>
 <body><div class="app">
-<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v71</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
+<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v72</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
 <main class="workspace"><section class="view"><canvas id="viewport"></canvas><div class="hint" id="hint">drag to orbit · pinch to zoom · tap an object to select</div><div class="toolbar"><button data-add="Box">＋ box</button><button data-add="Sphere">＋ sphere</button><button data-add="Cylinder">＋ cylinder</button><button data-add="Cone">＋ cone</button><button data-add="Torus">＋ torus</button><button id="focusBtn">focus</button></div></section>
 <aside class="side">
 <section class="section"><h3>scene objects</h3><div class="objects" id="objectList"></div><label>collections · organise your scene</label><div class="row"><select id="collectionSelect" aria-label="active collection"></select><button id="createCollectionBtn">＋ group</button></div><div class="grid2" style="margin-top:6px"><button id="assignCollectionBtn">move selection here</button><button id="renameCollectionBtn">rename group</button><button id="deleteCollectionBtn">delete group</button></div><div class="collection-list" id="collectionList"></div><div class="small">new objects go into the selected collection · use the eye button to hide or show a whole group</div><label for="parentSelect">parent selected object to</label><div class="row"><select id="parentSelect"><option value="">no parent · scene root</option></select><button id="unparentBtn">unparent</button></div><div class="small">parenting keeps the current world position; moving a parent also moves its children</div><div class="grid2" style="margin-top:7px"><button id="multiSelectBtn">multi-select: off</button><button id="clearSelectionBtn">clear selection</button><button id="duplicateBtn">duplicate</button><button id="deleteBtn">delete</button></div><div class="small" id="selectionInfo">select one object</div><div class="grid2" style="margin-top:7px"><button id="outlineVisibilityBtn">hide object outline</button><button id="outlineThicknessBtn">outline thickness: thin</button></div></section>
@@ -332,19 +332,56 @@ document.addEventListener('input',e=>{if(!e.target.closest('#transformControls,#
 
 /* Scene-aware AI action layer. All model instructions are validated against this allowlist. */
 function studioSceneContext(){
+  const observed=objects.filter(o=>o&&o.isObject3D).slice(0,80).map(o=>{
+    o.updateWorldMatrix(true,false);
+    const bounds=new THREE.Box3().setFromObject(o);
+    const size=bounds.getSize(new THREE.Vector3());
+    const center=bounds.getCenter(new THREE.Vector3());
+    const worldPosition=new THREE.Vector3();o.getWorldPosition(worldPosition);
+    return {
+      object:o,
+      bounds,
+      data:{
+        name:o.userData.name||'Object',
+        type:o.userData.primitive||'Mesh',
+        position:o.position.toArray().map(n=>+n.toFixed(3)),
+        worldPosition:worldPosition.toArray().map(n=>+n.toFixed(3)),
+        rotationDegrees:[o.rotation.x,o.rotation.y,o.rotation.z].map(n=>+(n*180/Math.PI).toFixed(1)),
+        scale:o.scale.toArray().map(n=>+n.toFixed(3)),
+        dimensions:size.toArray().map(n=>+n.toFixed(3)),
+        bounds:{min:bounds.min.toArray().map(n=>+n.toFixed(3)),max:bounds.max.toArray().map(n=>+n.toFixed(3)),center:center.toArray().map(n=>+n.toFixed(3))},
+        parent:objects.includes(o.parent)?(o.parent.userData.name||'Object'):null,
+        color:'#'+o.material.color.getHexString(),
+        roughness:+(o.material.roughness??.5).toFixed(2),
+        metalness:+(o.material.metalness??0).toFixed(2),
+        visible:o.visible
+      }
+    };
+  });
+  const spatialRelationships=[];
+  for(let i=0;i<observed.length;i++){
+    for(let j=i+1;j<observed.length;j++){
+      const a=observed[i],b=observed[j];
+      if(!a.data.visible||!b.data.visible)continue;
+      const distance=new THREE.Vector3(...a.data.bounds.center).distanceTo(new THREE.Vector3(...b.data.bounds.center));
+      const intersects=a.bounds.intersectsBox(b.bounds);
+      if(intersects||distance<3.5)spatialRelationships.push({
+        between:[a.data.name,b.data.name],
+        relation:intersects?'bounding boxes overlap':'nearby',
+        centerDistance:+distance.toFixed(3)
+      });
+    }
+  }
+  const cameraPosition=camera.position.toArray().map(n=>+n.toFixed(3));
+  const viewTarget=cameraTarget.toArray().map(n=>+n.toFixed(3));
   return {
-    objects:objects.slice(0,40).map(o=>({
-      name:o.userData.name||'Object',
-      type:o.userData.primitive||'Mesh',
-      position:o.position.toArray().map(n=>+n.toFixed(3)),
-      rotationDegrees:[o.rotation.x,o.rotation.y,o.rotation.z].map(n=>+(n*180/Math.PI).toFixed(1)),
-      scale:o.scale.toArray().map(n=>+n.toFixed(3)),
-      color:'#'+o.material.color.getHexString(),
-      roughness:+(o.material.roughness??.5).toFixed(2),
-      metalness:+(o.material.metalness??0).toFixed(2),
-      visible:o.visible
-    })),
+    objectCount:objects.length,
+    omittedFromDetailedObservation:Math.max(0,objects.length-observed.length),
+    objects:observed.map(x=>x.data),
+    spatialRelationships:spatialRelationships.slice(0,100),
     selected:[...selectedObjects].map(o=>o.userData.name),
+    activeObject:selected?.userData?.name||null,
+    camera:{position:cameraPosition,lookAt:viewTarget},
     background:'#'+scene.background.getHexString(),
     lighting:{keyIntensity:+keyLight.intensity.toFixed(2),fillIntensity:+fillLight.intensity.toFixed(2)},
     capabilities:['create_object','select_object','transform_selected','set_material','rename_object','duplicate_selected','set_background','set_lighting','focus_selected']
@@ -463,7 +500,7 @@ function studioRunActions(actions){
 const AI_ENDPOINT='https://mobile-3d-studio-ai.osaretinben8.workers.dev/';
 const aiPanel=$('aiChatPanel'),aiMessages=$('aiMessages'),aiInput=$('aiInput'),aiState=$('aiState');
 const aiHistory=[];
-const AI_AGENT_RULES = 'You are the scene-control agent inside Mobile 3D Studio. You can inspect the supplied scene state and propose actions. Return ONLY valid JSON with this exact shape: {"reply":"short natural-language response","actions":[]}. Never use markdown fences. Use only these action types: create_object {primitive:box|sphere|cylinder|cone|torus,name?,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z],color?:#RRGGBB,roughness?:0..1,metalness?:0..1}; select_object {name}; transform_selected {object?:existing object name,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z]}; set_material {object?:existing object name,color?:#RRGGBB,roughness?:0..1,metalness?:0..1,clearcoat?:0..1}; rename_object {object?:existing object name,name}; duplicate_selected {}; set_background {color:#RRGGBB}; set_lighting {key_intensity?:0..6,fill_intensity?:0..4,key_color?:#RRGGBB}; focus_selected {}. Use at most 8 actions. Only create or change things the user explicitly asks for. If the request is advice or conversation, return actions: []. If the target is ambiguous, ask a question and return no actions. Never claim an action was done unless it appears in actions. Keep actions small and precise. Do not attempt mesh topology edits, file operations, deletion, scripts, network access, or unsupported tools. For transforms, use absolute world-like editor coordinates and keep existing objects intact unless asked to change them.';
+const AI_AGENT_RULES = 'You are the autonomous 3D artist and scene collaborator inside Mobile 3D Studio, not a blind command executor. You receive a live observation of the actual scene on every turn. Build and update a mental model from object types, world positions, dimensions, bounding boxes, visibility, selection, hierarchy, spatial relationships, camera and lighting. Think like a competent 3D artist: understand the intended result, inspect what is already there, decide whether to reuse, modify, arrange or add objects, and choose a coherent sequence of actions. This is contextual judgement, not a blanket rule to always create or never create. Do not add clutter or duplicate an existing suitable object just because the user used the word create; infer whether they want a new object or a change to the current scene, and ask when genuinely ambiguous. For placement, reason about real object dimensions and bounding boxes, not just origin coordinates. Avoid accidental intersections and awkward stacking. If the user gives an exact position that would cause a collision, do not silently change their coordinates or knowingly create the collision: explain the conflict and ask whether to keep that position or adjust it. If placement is unspecified or approximate, choose a sensible clear location that fits the scene composition. Consider scale, orientation, spacing, visual balance and the camera view. Before acting, make sure the requested outcome is clear and the actions together achieve it; do not merely parrot the request. After acting, report what actually changed and mention important choices. Return ONLY valid JSON with this exact shape: {"reply":"natural concise response","actions":[]}. Never use markdown fences. Use only these action types: create_object {primitive:box|sphere|cylinder|cone|torus,name?,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z],color?:#RRGGBB,roughness?:0..1,metalness?:0..1}; select_object {name}; transform_selected {object?:existing object name,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z]}; set_material {object?:existing object name,color?:#RRGGBB,roughness?:0..1,metalness?:0..1,clearcoat?:0..1}; rename_object {object?:existing object name,name}; duplicate_selected {}; set_background {color:#RRGGBB}; set_lighting {key_intensity?:0..6,fill_intensity?:0..4,key_color?:#RRGGBB}; focus_selected {}. Use at most 8 actions. If the request is advice or conversation, return actions: []. If the intended target or outcome is ambiguous, ask one clear question and return no actions. Never claim an action was done unless it appears in actions. Preserve existing work unless the user asks to change it. Do not attempt mesh topology edits, file operations, deletion, scripts, network access, or unsupported tools. For transforms, use the supplied world positions and scene observations to choose accurate values.';
 function aiAddMessage(role,content,kind=''){
   const node=document.createElement('div');node.className='ai-msg '+(kind||role);node.textContent=content;aiMessages.appendChild(node);aiMessages.scrollTop=aiMessages.scrollHeight;return node;
 }
