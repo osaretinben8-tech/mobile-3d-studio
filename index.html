@@ -19,7 +19,7 @@
 </style>
 </head>
 <body><div class="app">
-<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v69</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
+<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v70</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
 <main class="workspace"><section class="view"><canvas id="viewport"></canvas><div class="hint" id="hint">drag to orbit · pinch to zoom · tap an object to select</div><div class="toolbar"><button data-add="Box">＋ box</button><button data-add="Sphere">＋ sphere</button><button data-add="Cylinder">＋ cylinder</button><button data-add="Cone">＋ cone</button><button data-add="Torus">＋ torus</button><button id="focusBtn">focus</button></div></section>
 <aside class="side">
 <section class="section"><h3>scene objects</h3><div class="objects" id="objectList"></div><label>collections · organise your scene</label><div class="row"><select id="collectionSelect" aria-label="active collection"></select><button id="createCollectionBtn">＋ group</button></div><div class="grid2" style="margin-top:6px"><button id="assignCollectionBtn">move selection here</button><button id="renameCollectionBtn">rename group</button><button id="deleteCollectionBtn">delete group</button></div><div class="collection-list" id="collectionList"></div><div class="small">new objects go into the selected collection · use the eye button to hide or show a whole group</div><label for="parentSelect">parent selected object to</label><div class="row"><select id="parentSelect"><option value="">no parent · scene root</option></select><button id="unparentBtn">unparent</button></div><div class="small">parenting keeps the current world position; moving a parent also moves its children</div><div class="grid2" style="margin-top:7px"><button id="multiSelectBtn">multi-select: off</button><button id="clearSelectionBtn">clear selection</button><button id="duplicateBtn">duplicate</button><button id="deleteBtn">delete</button></div><div class="small" id="selectionInfo">select one object</div><div class="grid2" style="margin-top:7px"><button id="outlineVisibilityBtn">hide object outline</button><button id="outlineThicknessBtn">outline thickness: thin</button></div></section>
@@ -35,7 +35,7 @@
 <section class="ai-panel" id="aiChatPanel" hidden aria-label="AI assistant">
   <div class="ai-head"><strong>✦ studio assistant</strong><span class="small" id="aiState">gemini connected</span><button class="ai-close" id="aiCloseBtn" type="button" aria-label="close assistant">×</button></div>
   <div class="ai-messages" id="aiMessages" aria-live="polite"><div class="ai-msg assistant">yo! i'm connected to Gemini. ask me about 3D modelling, scene planning, or how to use this studio. direct scene control is the next stage.</div></div>
-  <div class="ai-note">early access · chat and planning only; no scene edits yet</div>
+  <div class="ai-note">scene-aware agent · safe scene actions enabled</div>
   <form class="ai-compose" id="aiForm"><textarea id="aiInput" rows="1" placeholder="tell me what you want to make…" aria-label="message"></textarea><button id="aiSendBtn" type="submit">send</button></form>
 </section>
 </div>
@@ -329,10 +329,124 @@ document.addEventListener('click',e=>{if(e.target.closest('#undoBtn,#redoBtn,.se
 document.addEventListener('focusin',e=>{if(e.target.closest('#transformControls,#colour,#roughness,#metalness,#clearcoat,#clearcoatRoughness,#emissive,#emissiveIntensity,#transmission,#keyLightColour,#keyLightPower,#fillLightPower,#background,#time'))captureHistoryBefore()},true);
 document.addEventListener('input',e=>{if(!e.target.closest('#transformControls,#editControls,#colour,#roughness,#metalness,#clearcoat,#clearcoatRoughness,#emissive,#emissiveIntensity,#transmission,#keyLightColour,#keyLightPower,#fillLightPower'))return;captureHistoryBefore();queueMicrotask(commitHistory)},true);
 
+
+/* Scene-aware AI action layer. All model instructions are validated against this allowlist. */
+function studioSceneContext(){
+  return {
+    objects:objects.slice(0,40).map(o=>({
+      name:o.userData.name||'Object',
+      type:o.userData.primitive||'Mesh',
+      position:o.position.toArray().map(n=>+n.toFixed(3)),
+      rotationDegrees:[o.rotation.x,o.rotation.y,o.rotation.z].map(n=>+(n*180/Math.PI).toFixed(1)),
+      scale:o.scale.toArray().map(n=>+n.toFixed(3)),
+      color:'#'+o.material.color.getHexString(),
+      roughness:+(o.material.roughness??.5).toFixed(2),
+      metalness:+(o.material.metalness??0).toFixed(2),
+      visible:o.visible
+    })),
+    selected:[...selectedObjects].map(o=>o.userData.name),
+    background:'#'+scene.background.getHexString(),
+    lighting:{keyIntensity:+keyLight.intensity.toFixed(2),fillIntensity:+fillLight.intensity.toFixed(2)},
+    capabilities:['create_object','select_object','transform_selected','set_material','rename_object','duplicate_selected','set_background','set_lighting','focus_selected']
+  };
+}
+function studioFindObject(name){
+  if(typeof name!=='string'||!name.trim())return null;
+  const q=name.trim().toLowerCase();
+  return objects.find(o=>(o.userData.name||'').toLowerCase()===q)||null;
+}
+function studioVector(target,value,rotation=false,scale=false){
+  if(!Array.isArray(value)||value.length!==3||!value.every(Number.isFinite))throw new Error('transform values must be three finite numbers');
+  target.set(value[0],value[1],value[2]);
+  if(scale){target.set(Math.max(.001,target.x),Math.max(.001,target.y),Math.max(.001,target.z))}
+  if(rotation)target.set(target.x*Math.PI/180,target.y*Math.PI/180,target.z*Math.PI/180);
+}
+function studioRunActions(actions){
+  if(!Array.isArray(actions)||actions.length>8)throw new Error('the agent may run up to 8 scene actions at once');
+  const results=[];
+  if(!actions.length)return results;
+  captureHistoryBefore();
+  try{
+    for(const a of actions){
+      try{
+        if(!a||typeof a!=='object'||typeof a.type!=='string')throw new Error('invalid action');
+        let target=null;
+        if(a.object){target=studioFindObject(a.object);if(!target)throw new Error('object not found: '+a.object);select(target)}
+        switch(a.type){
+          case 'create_object':{
+            const types={box:'Box',sphere:'Sphere',cylinder:'Cylinder',cone:'Cone',torus:'Torus'};
+            const type=types[String(a.primitive||'box').toLowerCase()];
+            if(!type)throw new Error('unsupported primitive');
+            make(type);target=selected;
+            if(typeof a.name==='string'&&a.name.trim())target.userData.name=a.name.trim().slice(0,48);
+            if(Array.isArray(a.position))studioVector(target.position,a.position);
+            if(Array.isArray(a.rotation_degrees))studioVector(target.rotation,a.rotation_degrees,true);
+            if(Array.isArray(a.scale))studioVector(target.scale,a.scale,false,true);
+            if(typeof a.color==='string'&&/^#[0-9a-fA-F]{6}$/.test(a.color))target.material.color.set(a.color);
+            if(Number.isFinite(a.roughness))target.material.roughness=Math.max(0,Math.min(1,a.roughness));
+            if(Number.isFinite(a.metalness))target.material.metalness=Math.max(0,Math.min(1,a.metalness));
+            results.push('created '+target.userData.name);break;
+          }
+          case 'select_object':{
+            target=studioFindObject(a.name);if(!target)throw new Error('object not found: '+String(a.name));select(target);results.push('selected '+target.userData.name);break;
+          }
+          case 'transform_selected':{
+            if(!selected)throw new Error('nothing is selected');
+            if(Array.isArray(a.position))studioVector(selected.position,a.position);
+            if(Array.isArray(a.rotation_degrees))studioVector(selected.rotation,a.rotation_degrees,true);
+            if(Array.isArray(a.scale))studioVector(selected.scale,a.scale,false,true);
+            selectedObjects.clear();selectedObjects.add(selected);
+            results.push('transformed '+selected.userData.name);break;
+          }
+          case 'set_material':{
+            if(!selected)throw new Error('nothing is selected');
+            if(typeof a.color==='string'){if(!/^#[0-9a-fA-F]{6}$/.test(a.color))throw new Error('colour must be #RRGGBB');selected.material.color.set(a.color)}
+            if(Number.isFinite(a.roughness))selected.material.roughness=Math.max(0,Math.min(1,a.roughness));
+            if(Number.isFinite(a.metalness))selected.material.metalness=Math.max(0,Math.min(1,a.metalness));
+            if(Number.isFinite(a.clearcoat))selected.material.clearcoat=Math.max(0,Math.min(1,a.clearcoat));
+            results.push('updated material on '+selected.userData.name);break;
+          }
+          case 'rename_object':{
+            if(!selected)throw new Error('nothing is selected');
+            if(typeof a.name!=='string'||!a.name.trim())throw new Error('new name is required');
+            selected.userData.name=a.name.trim().slice(0,48);results.push('renamed object to '+selected.userData.name);break;
+          }
+          case 'duplicate_selected':{
+            if(!selected)throw new Error('nothing is selected');
+            $('duplicateBtn').click();results.push('duplicated selected object');break;
+          }
+          case 'set_background':{
+            if(typeof a.color!=='string'||!/^#[0-9a-fA-F]{6}$/.test(a.color))throw new Error('background colour must be #RRGGBB');
+            scene.background.set(a.color);$('background').value=a.color;results.push('changed background');break;
+          }
+          case 'set_lighting':{
+            if(Number.isFinite(a.key_intensity)){keyLight.intensity=Math.max(0,Math.min(6,a.key_intensity));$('keyLightPower').value=keyLight.intensity}
+            if(Number.isFinite(a.fill_intensity)){fillLight.intensity=Math.max(0,Math.min(4,a.fill_intensity));$('fillLightPower').value=fillLight.intensity}
+            if(typeof a.key_color==='string'&&/^#[0-9a-fA-F]{6}$/.test(a.key_color)){keyLight.color.set(a.key_color);$('keyLightColour').value=a.key_color}
+            results.push('adjusted scene lighting');break;
+          }
+          case 'focus_selected':{
+            if(!selected)throw new Error('nothing is selected');
+            selected.updateWorldMatrix(true,true);
+            const bounds=new THREE.Box3().setFromObject(selected),center=bounds.getCenter(new THREE.Vector3()),size=bounds.getSize(new THREE.Vector3());
+            cameraTarget.copy(center);orbit.r=Math.max(3,Math.min(24,Math.max(size.x,size.y,size.z)*2.8));cameraUpdate();
+            results.push('focused camera on '+selected.userData.name);break;
+          }
+          default:throw new Error('action not allowed: '+a.type);
+        }
+      }catch(error){results.push('not applied: '+error.message)}
+    }
+  }finally{
+    renderList();renderTransform();commitHistory();
+  }
+  return results;
+}
+
 /* Gemini assistant connection */
 const AI_ENDPOINT='https://mobile-3d-studio-ai.osaretinben8.workers.dev/';
 const aiPanel=$('aiChatPanel'),aiMessages=$('aiMessages'),aiInput=$('aiInput'),aiState=$('aiState');
 const aiHistory=[];
+const AI_AGENT_RULES = 'You are the scene-control agent inside Mobile 3D Studio. You can inspect the supplied scene state and propose actions. Return ONLY valid JSON with this exact shape: {"reply":"short natural-language response","actions":[]}. Never use markdown fences. Use only these action types: create_object {primitive:box|sphere|cylinder|cone|torus,name?,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z],color?:#RRGGBB,roughness?:0..1,metalness?:0..1}; select_object {name}; transform_selected {object?:existing object name,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z]}; set_material {object?:existing object name,color?:#RRGGBB,roughness?:0..1,metalness?:0..1,clearcoat?:0..1}; rename_object {object?:existing object name,name}; duplicate_selected {}; set_background {color:#RRGGBB}; set_lighting {key_intensity?:0..6,fill_intensity?:0..4,key_color?:#RRGGBB}; focus_selected {}. Use at most 8 actions. Only create or change things the user explicitly asks for. If the request is advice or conversation, return actions: []. If the target is ambiguous, ask a question and return no actions. Never claim an action was done unless it appears in actions. Keep actions small and precise. Do not attempt mesh topology edits, file operations, deletion, scripts, network access, or unsupported tools. For transforms, use absolute world-like editor coordinates and keep existing objects intact unless asked to change them.';
 function aiAddMessage(role,content,kind=''){
   const node=document.createElement('div');node.className='ai-msg '+(kind||role);node.textContent=content;aiMessages.appendChild(node);aiMessages.scrollTop=aiMessages.scrollHeight;return node;
 }
@@ -344,10 +458,18 @@ $('aiForm').addEventListener('submit',async e=>{
   aiHistory.push({role:'user',content:message});aiAddMessage('user',message);aiInput.value='';$('aiSendBtn').disabled=true;aiState.textContent='thinking…';
   const pending=aiAddMessage('assistant','thinking…');
   try{
-    const response=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:aiHistory})});
+    const outgoing=aiHistory.map(m=>({...m}));
+    const sceneState=studioSceneContext();
+    outgoing[outgoing.length-1].content=AI_AGENT_RULES+'\\n\\nCURRENT SCENE STATE (JSON): '+JSON.stringify(sceneState)+'\\n\\nUSER REQUEST: '+message;
+    const response=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:outgoing})});
     const data=await response.json();if(!response.ok)throw new Error(data.error||('request failed · '+response.status));
     if(typeof data.reply!=='string'||!data.reply.trim())throw new Error('Gemini returned no reply');
-    pending.textContent=data.reply;aiHistory.push({role:'assistant',content:data.reply});aiState.textContent='gemini connected';
+    let agentReply=data.reply,agentActions=[];
+    try{const parsed=JSON.parse(data.reply);if(parsed&&typeof parsed==='object'){if(typeof parsed.reply==='string')agentReply=parsed.reply;if(Array.isArray(parsed.actions))agentActions=parsed.actions}}catch(parseError){}
+    pending.textContent=agentReply;
+    if(agentActions.length){const outcomes=studioRunActions(agentActions);aiAddMessage('assistant','scene actions:\\n'+outcomes.map((x,i)=>(i+1)+'. '+x).join('\\n'));aiHistory.push({role:'assistant',content:JSON.stringify({reply:agentReply,actions:agentActions})})}
+    else aiHistory.push({role:'assistant',content:data.reply});
+    aiState.textContent=agentActions.length?'scene updated':'gemini connected';
   }catch(error){pending.remove();aiAddMessage('assistant',error.message,'error');aiState.textContent='connection issue'}
   finally{$('aiSendBtn').disabled=false;aiInput.focus();aiMessages.scrollTop=aiMessages.scrollHeight}
 });
