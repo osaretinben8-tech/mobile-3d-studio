@@ -401,7 +401,7 @@ function studioVector(target,value,rotation=false,scale=false){
 function studioNormalizeAction(raw){
   if(typeof raw==='string'){try{raw=JSON.parse(raw)}catch(e){throw new Error('action was plain text, not structured JSON')}}
   if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('action must be an object');
-  const supported=['create_object','select_object','transform_selected','set_material','rename_object','duplicate_selected','delete_object','set_visibility','set_background','set_lighting','focus_selected'];
+  const supported=['create_object','select_object','transform_selected','set_material','rename_object','duplicate_selected','delete_object','delete_objects_by_type','set_visibility','set_background','set_lighting','focus_selected'];
   if(raw.action&&typeof raw.action==='object')raw=raw.action;
   if(raw.functionCall&&typeof raw.functionCall==='object')raw={type:raw.functionCall.name,...(raw.functionCall.args||{})};
   if(raw.function_call&&typeof raw.function_call==='object')raw={type:raw.function_call.name,...(raw.function_call.arguments||raw.function_call.args||{})};
@@ -417,6 +417,7 @@ function studioNormalizeAction(raw){
   const primitive=String(raw.primitive||raw.object_type||raw.geometry||'').toLowerCase();
   if(['box','sphere','cylinder','cone','torus'].includes(primitive))return {...raw,type:'create_object',primitive};
   if(raw.object&&(['position','rotation_degrees','scale'].some(k=>Array.isArray(raw[k]))))return {...raw,type:'transform_selected'};
+  if(typeof raw.object==='string'&&Object.keys(raw).every(k=>['object','name','target'].includes(k)))return {...raw,type:'delete_object'};
   if(raw.object&&(['color','roughness','metalness','clearcoat'].some(k=>raw[k]!==undefined)))return {...raw,type:'set_material'};
   if(raw.object&&typeof (raw.new_name||raw.rename_to)==='string')return {...raw,type:'rename_object',name:raw.new_name||raw.rename_to};
   for(const key of supported){if(raw[key]&&typeof raw[key]==='object')return {...raw[key],type:key};if(raw[key]===true)return {type:key}}
@@ -479,10 +480,25 @@ function studioRunActions(actions){
           }
           case 'delete_object':{
             const victim=studioFindObject(a.object||a.name);
-            if(!victim)throw new Error('specify an existing object to delete');
+            if(!victim)throw new Error('object not found: '+(a.object||a.name||'unnamed'));
+            const label=victim.userData.name||'Object';
             select(victim);$('deleteBtn').click();
             if(objects.includes(victim))throw new Error('delete operation did not complete');
-            results.push('deleted '+(a.object||a.name));break;
+            results.push('deleted '+label);break;
+          }
+          case 'delete_objects_by_type':{
+            const kind=String(a.primitive||a.object_type||a.geometry||'').toLowerCase();
+            const aliases={sphere:'Sphere',box:'Box',cube:'Box',cylinder:'Cylinder',cone:'Cone',torus:'Torus'};
+            const wanted=aliases[kind]||kind;
+            if(!aliases[kind])throw new Error('specify a supported primitive type');
+            const victims=objects.filter(o=>String(o.userData.primitive||'').toLowerCase()===wanted.toLowerCase());
+            if(!victims.length)throw new Error('no '+wanted.toLowerCase()+' objects found');
+            const names=victims.map(o=>o.userData.name||'Object');
+            victims.forEach(victim=>{
+              if(objects.includes(victim)){select(victim);$('deleteBtn').click()}
+              if(objects.includes(victim))throw new Error('could not delete '+(victim.userData.name||'object'));
+            });
+            results.push('deleted '+names.length+' '+wanted.toLowerCase()+(names.length===1?'':'s')+': '+names.join(', '));break;
           }
           case 'set_visibility':{
             const victim=studioFindObject(a.object||a.name);
@@ -538,7 +554,7 @@ $('aiClearBtn').addEventListener('click',()=>{
   aiMessages.innerHTML='<div class="ai-msg assistant">chat cleared. fresh start — what are we making?</div>';
   aiState.textContent='gemini connected';
 });
-const AI_AGENT_RULES = 'You are the conversational 3D artist and scene collaborator inside Mobile 3D Studio. Talk naturally like a capable creative partner. You may discuss ideas, answer questions, explain your reasoning, ask clarifying questions, acknowledge corrections, and maintain conversational continuity. Do NOT force ordinary conversation into JSON. If the user is chatting, asking a question, discussing an idea, or needs clarification, reply in natural plain text and make no scene changes. ONLY when the user clearly requests an actual scene change, return ONLY valid JSON with this exact shape: {"reply":"natural concise response","actions":[...]}. Never use markdown fences around action JSON. The action type must always be one of the exact supported operation names; object names belong in the name or object parameter and must NEVER be used as an action type. You receive a live observation of the actual scene on every turn. Build and update a mental model from object types, world positions, dimensions, bounding boxes, visibility, selection, hierarchy, spatial relationships, camera and lighting. Think like a competent 3D artist: understand the intended result, inspect what is already there, decide whether to reuse, modify, arrange or add objects, and choose a coherent sequence of actions. Do not add clutter or duplicate an existing suitable object just because the user used the word create; infer whether they want a new object or a change to the current scene, and ask when genuinely ambiguous. For placement, reason about real object dimensions and bounding boxes, not just origin coordinates. Avoid accidental intersections and awkward stacking. If the user gives an exact position that would cause a collision, do not silently change their coordinates or knowingly create the collision: explain the conflict and ask whether to keep that position or adjust it. If placement is unspecified or approximate, choose a sensible clear location that fits the scene composition. Consider scale, orientation, spacing, visual balance and the camera view. Before acting, make sure the requested outcome is clear and the actions together achieve it. After acting, report what actually changed and mention important choices. Use only these action types: create_object {primitive:box|sphere|cylinder|cone|torus,name?,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z],color?:#RRGGBB,roughness?:0..1,metalness?:0..1}; delete_object {object:existing object name}; set_visibility {object:existing object name,visible:boolean}; select_object {name}; transform_selected {object?:existing object name,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z]}; set_material {object?:existing object name,color?:#RRGGBB,roughness?:0..1,metalness?:0..1,clearcoat?:0..1}; rename_object {object?:existing object name,name}; duplicate_selected {}; set_background {color:#RRGGBB}; set_lighting {key_intensity?:0..6,fill_intensity?:0..4,key_color?:#RRGGBB}; focus_selected {}. Use at most 8 actions. Only perform changes the user clearly requested. If the target or intended outcome is ambiguous, ask one clear question and do not act. Never claim an action was done unless it appears in actions. Preserve existing work unless the user asks to change it. Deletion is supported ONLY through delete_object and ONLY when the user explicitly requests deleting a clearly identified object. Never delete anything merely to make room without asking. set_visibility only hides or shows the named object. Never claim success unless the execution result confirms it. If object placement, stacking, attachment, or spatial relationship is not explicitly stated, ask before choosing the spatial relationship. For ground placement, groundPlaneY is the floor surface and object bounds must rest on it. Do not attempt mesh topology edits, file operations, scripts, network access, or unsupported tools. For transforms, use supplied world positions and scene observations to choose accurate values.';
+const AI_AGENT_RULES = 'You are the conversational 3D artist and scene collaborator inside Mobile 3D Studio. Talk naturally like a capable creative partner. You may discuss ideas, answer questions, explain your reasoning, ask clarifying questions, acknowledge corrections, and maintain conversational continuity. Do NOT force ordinary conversation into JSON. If the user is chatting, asking a question, discussing an idea, or needs clarification, reply in natural plain text and make no scene changes. ONLY when the user clearly requests an actual scene change, return ONLY valid JSON with this exact shape: {"reply":"natural concise response","actions":[...]}. Never use markdown fences around action JSON. The action type must always be one of the exact supported operation names; object names belong in the name or object parameter and must NEVER be used as an action type. You receive a live observation of the actual scene on every turn. Build and update a mental model from object types, world positions, dimensions, bounding boxes, visibility, selection, hierarchy, spatial relationships, camera and lighting. Think like a competent 3D artist: understand the intended result, inspect what is already there, decide whether to reuse, modify, arrange or add objects, and choose a coherent sequence of actions. Do not add clutter or duplicate an existing suitable object just because the user used the word create; infer whether they want a new object or a change to the current scene, and ask when genuinely ambiguous. For placement, reason about real object dimensions and bounding boxes, not just origin coordinates. Avoid accidental intersections and awkward stacking. If the user gives an exact position that would cause a collision, do not silently change their coordinates or knowingly create the collision: explain the conflict and ask whether to keep that position or adjust it. If placement is unspecified or approximate, choose a sensible clear location that fits the scene composition. Consider scale, orientation, spacing, visual balance and the camera view. Before acting, make sure the requested outcome is clear and the actions together achieve it. After acting, report what actually changed and mention important choices. Use only these action types: create_object {primitive:box|sphere|cylinder|cone|torus,name?,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z],color?:#RRGGBB,roughness?:0..1,metalness?:0..1}; delete_object {object:existing object name}; delete_objects_by_type {primitive:sphere|box|cylinder|cone|torus}; set_visibility {object:existing object name,visible:boolean}; select_object {name}; transform_selected {object?:existing object name,position?:[x,y,z],rotation_degrees?:[x,y,z],scale?:[x,y,z]}; set_material {object?:existing object name,color?:#RRGGBB,roughness?:0..1,metalness?:0..1,clearcoat?:0..1}; rename_object {object?:existing object name,name}; duplicate_selected {}; set_background {color:#RRGGBB}; set_lighting {key_intensity?:0..6,fill_intensity?:0..4,key_color?:#RRGGBB}; focus_selected {}. Use at most 8 actions. Only perform changes the user clearly requested. If the target or intended outcome is ambiguous, ask one clear question and do not act. Never claim an action was done unless it appears in actions. Preserve existing work unless the user asks to change it. Deletion is supported ONLY through delete_object and ONLY when the user explicitly requests deleting a clearly identified object. Never delete anything merely to make room without asking. set_visibility only hides or shows the named object. Never claim success unless the execution result confirms it. If object placement, stacking, attachment, or spatial relationship is not explicitly stated, ask before choosing the spatial relationship. For ground placement, groundPlaneY is the floor surface and object bounds must rest on it. Do not attempt mesh topology edits, file operations, scripts, network access, or unsupported tools. For transforms, use supplied world positions and scene observations to choose accurate values.';
 function aiAddMessage(role,content,kind=''){
   const node=document.createElement('div');node.className='ai-msg '+(kind||role);node.textContent=content;aiMessages.appendChild(node);aiMessages.scrollTop=aiMessages.scrollHeight;return node;
 }
@@ -559,7 +575,18 @@ $('aiForm').addEventListener('submit',async e=>{
     let agentReply=data.reply,agentActions=[];
     try{const parsed=JSON.parse(data.reply);if(parsed&&typeof parsed==='object'){if(typeof parsed.reply==='string')agentReply=parsed.reply;if(Array.isArray(parsed.actions))agentActions=parsed.actions}}catch(parseError){}
     pending.textContent=agentReply;
-    if(agentActions.length){const outcomes=studioRunActions(agentActions);aiAddMessage('assistant','scene actions:\\n'+outcomes.map((x,i)=>(i+1)+'. '+x).join('\\n'));aiHistory.push({role:'assistant',content:JSON.stringify({reply:agentReply,actions:agentActions})});saveAIChat()}
+    if(agentActions.length){
+      const outcomes=studioRunActions(agentActions);
+      const failures=outcomes.filter(x=>x.startsWith('not applied:'));
+      const confirmed=outcomes.filter(x=>!x.startsWith('not applied:'));
+      pending.textContent=failures.length
+        ? 'I could not complete every requested scene change. '+failures.join('; ')
+        : agentReply;
+      if(confirmed.length)aiAddMessage('assistant','scene actions:\\n'+confirmed.map((x,i)=>(i+1)+'. '+x).join('\\n'));
+      if(failures.length)aiAddMessage('assistant','action errors:\\n'+failures.join('\\n'),'error');
+      aiHistory.push({role:'assistant',content:failures.length?('Action result: '+outcomes.join('; ')):JSON.stringify({reply:agentReply,actions:agentActions})});
+      saveAIChat();
+    }
     else aiHistory.push({role:'assistant',content:data.reply});
     saveAIChat();
     aiState.textContent=agentActions.length?'scene updated':'gemini connected';
