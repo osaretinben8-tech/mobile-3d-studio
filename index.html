@@ -19,7 +19,7 @@
 </style>
 </head>
 <body><div class="app">
-<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v70</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
+<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v71</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
 <main class="workspace"><section class="view"><canvas id="viewport"></canvas><div class="hint" id="hint">drag to orbit · pinch to zoom · tap an object to select</div><div class="toolbar"><button data-add="Box">＋ box</button><button data-add="Sphere">＋ sphere</button><button data-add="Cylinder">＋ cylinder</button><button data-add="Cone">＋ cone</button><button data-add="Torus">＋ torus</button><button id="focusBtn">focus</button></div></section>
 <aside class="side">
 <section class="section"><h3>scene objects</h3><div class="objects" id="objectList"></div><label>collections · organise your scene</label><div class="row"><select id="collectionSelect" aria-label="active collection"></select><button id="createCollectionBtn">＋ group</button></div><div class="grid2" style="margin-top:6px"><button id="assignCollectionBtn">move selection here</button><button id="renameCollectionBtn">rename group</button><button id="deleteCollectionBtn">delete group</button></div><div class="collection-list" id="collectionList"></div><div class="small">new objects go into the selected collection · use the eye button to hide or show a whole group</div><label for="parentSelect">parent selected object to</label><div class="row"><select id="parentSelect"><option value="">no parent · scene root</option></select><button id="unparentBtn">unparent</button></div><div class="small">parenting keeps the current world position; moving a parent also moves its children</div><div class="grid2" style="margin-top:7px"><button id="multiSelectBtn">multi-select: off</button><button id="clearSelectionBtn">clear selection</button><button id="duplicateBtn">duplicate</button><button id="deleteBtn">delete</button></div><div class="small" id="selectionInfo">select one object</div><div class="grid2" style="margin-top:7px"><button id="outlineVisibilityBtn">hide object outline</button><button id="outlineThicknessBtn">outline thickness: thin</button></div></section>
@@ -361,8 +361,25 @@ function studioVector(target,value,rotation=false,scale=false){
   if(scale){target.set(Math.max(.001,target.x),Math.max(.001,target.y),Math.max(.001,target.z))}
   if(rotation)target.set(target.x*Math.PI/180,target.y*Math.PI/180,target.z*Math.PI/180);
 }
+function studioNormalizeAction(raw){
+  if(typeof raw==='string'){try{raw=JSON.parse(raw)}catch(e){throw new Error('action was plain text, not structured JSON')}}
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))throw new Error('action must be an object');
+  if(raw.action&&typeof raw.action==='object')raw=raw.action;
+  if(raw.functionCall&&typeof raw.functionCall==='object')raw={type:raw.functionCall.name,...(raw.functionCall.args||{})};
+  if(raw.function_call&&typeof raw.function_call==='object')raw={type:raw.function_call.name,...(raw.function_call.arguments||raw.function_call.args||{})};
+  const type=raw.type||raw.action_type||raw.tool||raw.name||raw.command;
+  if(typeof type==='string'){
+    const args=raw.parameters||raw.arguments||raw.args||raw.input;
+    if(args&&typeof args==='object'&&!Array.isArray(args))return {...args,type};
+    return {...raw,type};
+  }
+  const supported=['create_object','select_object','transform_selected','set_material','rename_object','duplicate_selected','set_background','set_lighting','focus_selected'];
+  for(const key of supported){if(raw[key]&&typeof raw[key]==='object')return {...raw[key],type:key};if(raw[key]===true)return {type:key}}
+  throw new Error('unrecognized action format: '+JSON.stringify(raw).slice(0,180));
+}
 function studioRunActions(actions){
   if(!Array.isArray(actions)||actions.length>8)throw new Error('the agent may run up to 8 scene actions at once');
+  actions=actions.map(studioNormalizeAction);
   const results=[];
   if(!actions.length)return results;
   captureHistoryBefore();
