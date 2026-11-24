@@ -1,0 +1,58 @@
+name: Editor JavaScript syntax check
+on:
+  push:
+    paths:
+      - 'index.html'
+      - '.github/workflows/editor-js-check.yml'
+  pull_request:
+    paths:
+      - 'index.html'
+      - '.github/workflows/editor-js-check.yml'
+  workflow_dispatch:
+jobs:
+  check-inline-javascript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Extract inline scripts
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+          class Scripts(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.active = False
+                  self.external = False
+                  self.parts = []
+                  self.scripts = []
+              def handle_starttag(self, tag, attrs):
+                  if tag == "script":
+                      self.active = True
+                      self.external = any(k == "src" for k, _ in attrs)
+                      self.parts = []
+              def handle_data(self, data):
+                  if self.active and not self.external:
+                      self.parts.append(data)
+              def handle_endtag(self, tag):
+                  if tag == "script" and self.active:
+                      if "".join(self.parts).strip():
+                          self.scripts.append("".join(self.parts))
+                      self.active = False
+          parser = Scripts()
+          parser.feed(Path("index.html").read_text(encoding="utf-8"))
+          out = Path("/tmp/editor-inline")
+          out.mkdir(exist_ok=True)
+          for i, script in enumerate(parser.scripts):
+              (out / f"script-{i}.js").write_text(script, encoding="utf-8")
+          print(f"extracted {len(parser.scripts)} inline scripts")
+          PY
+      - name: Parse inline JavaScript
+        run: |
+          for file in /tmp/editor-inline/*.js; do
+            echo "Checking $file"
+            node --check "$file"
+          done
