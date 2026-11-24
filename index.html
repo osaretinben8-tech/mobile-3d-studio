@@ -389,7 +389,8 @@ function studioSceneContext(){
         color:'#'+o.material.color.getHexString(),
         roughness:+(o.material.roughness??.5).toFixed(2),
         metalness:+(o.material.metalness??0).toFixed(2),
-        visible:o.visible
+        visible:o.visible,
+        geometry:o.geometry?.attributes?.position?{vertexCount:o.geometry.attributes.position.count,triangleCount:Math.floor((o.geometry.index?.count||o.geometry.attributes.position.count)/3)}:null
       }
     };
   });
@@ -420,8 +421,45 @@ function studioSceneContext(){
     camera:{position:cameraPosition,lookAt:viewTarget},
     background:'#'+scene.background.getHexString(),
     lighting:{keyIntensity:+keyLight.intensity.toFixed(2),fillIntensity:+fillLight.intensity.toFixed(2)},
-    groundPlaneY:-1.02,capabilities:['create_object','create_mesh','select_object','transform_selected','animate_object','set_material','rename_object','duplicate_selected','delete_object','delete_objects_by_type','set_visibility','set_background','set_lighting','focus_selected','undo','redo','enter_edit_mode','exit_edit_mode','set_component_mode','select_mesh_component','edit_mesh_component','extrude_face','inset_face','bevel_edge','loop_cut','add_keyframe','add_camera_keyframe','set_time','set_playback','set_playback_speed','set_easing','home_camera','set_camera_pose','set_grid_visibility','create_collection','rename_collection','assign_collection','set_collection_visibility','parent_object','unparent_object','set_active_collection','delete_collection','set_multi_select','clear_selection','set_outline_visibility','set_outline_thickness','set_render_quality','go_to_next_keyframe','go_to_previous_keyframe','set_move_step','clear_object_keyframes','clear_camera_keyframes','set_material_preset'],editMode:editState,collections:collections.map(c=>({id:c.id,name:c.name,visible:c.visible,objectCount:objects.filter(o=>o.userData.collectionId===c.id).length})),animation:{durationSeconds:duration,currentTime:Number($('time').value),easing:$('easing').value,playbackSpeed,playing,objectsWithKeyframes:objects.filter(o=>(keys[o.uuid]||[]).length).map(o=>({name:o.userData.name,keyframeCount:keys[o.uuid].length}))}
+    groundPlaneY:-1.02,settings:{moveStep:Number($('moveStep').value)},capabilities:['create_object','create_mesh','select_object','transform_selected','animate_object','set_material','rename_object','duplicate_selected','delete_object','delete_objects_by_type','set_visibility','set_background','set_lighting','focus_selected','undo','redo','enter_edit_mode','exit_edit_mode','set_component_mode','select_mesh_component','edit_mesh_component','extrude_face','inset_face','bevel_edge','loop_cut','add_keyframe','add_camera_keyframe','set_time','set_playback','set_playback_speed','set_easing','home_camera','set_camera_pose','set_grid_visibility','create_collection','rename_collection','assign_collection','set_collection_visibility','parent_object','unparent_object','set_active_collection','delete_collection','set_multi_select','clear_selection','set_outline_visibility','set_outline_thickness','set_render_quality','go_to_next_keyframe','go_to_previous_keyframe','set_move_step','clear_object_keyframes','clear_camera_keyframes','set_material_preset'],editMode:editState,collections:collections.map(c=>({id:c.id,name:c.name,visible:c.visible,objectCount:objects.filter(o=>o.userData.collectionId===c.id).length})),animation:{durationSeconds:duration,currentTime:Number($('time').value),easing:$('easing').value,playbackSpeed,playing,objectsWithKeyframes:objects.filter(o=>(keys[o.uuid]||[]).length).map(o=>({name:o.userData.name,keyframeCount:keys[o.uuid].length}))}
   };
+}
+function studioVerifyActions(actions,before,after,outcomes){
+ const oldObjects=before.objects||[],newObjects=after.objects||[];
+ const near=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>Math.abs(v-b[i])<0.015);
+ return actions.map((a,i)=>{
+  const log=outcomes[i]||'no execution result';
+  if(log.startsWith('not applied:'))return {action:a.type,status:'failed',evidence:log};
+  const name=a.name||a.object||before.activeObject,now=newObjects.find(o=>o.name===name);
+  let ok=null,evidence='operation ran, but no reliable postcondition is available yet';
+  switch(a.type){
+   case 'create_object':case 'create_mesh':
+    ok=!!now&&newObjects.length>oldObjects.length;evidence=ok?('scene contains '+now.name+(now.geometry?' · '+now.geometry.vertexCount+' vertices · '+now.geometry.triangleCount+' triangles':'')):'requested new object is not present in the resulting scene';
+    if(a.type==='create_mesh'&&ok&&(!now.geometry||now.geometry.triangleCount<1)){ok=false;evidence='object exists but has no confirmed triangles'}break;
+   case 'delete_object':ok=!newObjects.some(o=>o.name===(a.object||a.name));evidence=ok?'object is absent from the resulting scene':'object is still present';break;
+   case 'rename_object':ok=!!newObjects.find(o=>o.name===a.name)&&!newObjects.some(o=>o.name===name&&name!==a.name);evidence=ok?'renamed object is present':'requested renamed object was not confirmed';break;
+   case 'select_object':ok=after.activeObject===a.name;evidence='active object: '+String(after.activeObject);break;
+   case 'transform_selected':ok=!!now&&(!a.position||near(now.position,a.position))&&(!a.rotation_degrees||near(now.rotationDegrees,a.rotation_degrees))&&(!a.scale||near(now.scale,a.scale));evidence=ok?'requested transform values match the resulting scene':'resulting transform does not match the requested values';break;
+   case 'set_move_step':ok=Math.abs((after.settings?.moveStep??NaN)-Number(a.step))<1e-6;evidence='move step is '+String(after.settings?.moveStep);break;
+   case 'enter_edit_mode':ok=after.editMode?.active===true;evidence='edit mode '+(ok?'is active':'is not active');break;
+   case 'exit_edit_mode':ok=after.editMode?.active===false;evidence='edit mode '+(ok?'is inactive':'is still active');break;
+   case 'set_component_mode':ok=after.editMode?.componentMode===a.mode;evidence='component mode is '+String(after.editMode?.componentMode);break;
+   case 'select_mesh_component':ok=after.editMode?.selectedComponentIndices?.includes(Number(a.index))===true&&after.editMode?.componentMode===a.mode;evidence=ok?'requested component index is selected':'requested component selection is not present';break;
+   case 'extrude_face':ok=!!before.meshInspection&&!!after.meshInspection&&after.meshInspection.object===before.meshInspection.object&&after.meshInspection.vertexCount>before.meshInspection.vertexCount;evidence=ok?'mesh vertex count increased from '+before.meshInspection.vertexCount+' to '+after.meshInspection.vertexCount:'no confirmed mesh vertex increase after extrusion';break;
+   case 'set_visibility':ok=!!now&&now.visible===a.visible;evidence=ok?'visibility matches request':'visibility does not match request';break;
+   case 'set_material':ok=!!now&&(!a.color||now.color.toLowerCase()===a.color.toLowerCase())&&(!Number.isFinite(a.roughness)||Math.abs(now.roughness-a.roughness)<.015)&&(!Number.isFinite(a.metalness)||Math.abs(now.metalness-a.metalness)<.015);evidence=ok?'requested material properties match the scene':'material properties do not match the request';break;
+  }
+  return {action:a.type,status:ok===true?'verified':ok===false?'failed':'unverified',evidence};
+ });
+}
+function studioAuditMessage(items){
+ const verified=items.filter(x=>x.status==='verified'),failed=items.filter(x=>x.status==='failed'),unknown=items.filter(x=>x.status==='unverified');
+ const lines=['scene verification: '+verified.length+' verified · '+failed.length+' failed · '+unknown.length+' not independently verified'];
+ if(verified.length)lines.push('confirmed: '+verified.map(x=>x.action+' ('+x.evidence+')').join('; '));
+ if(failed.length)lines.push('failed: '+failed.map(x=>x.action+' ('+x.evidence+')').join('; '));
+ if(unknown.length)lines.push('not verified: '+unknown.map(x=>x.action).join(', '));
+ lines.push(failed.length?'the requested workflow is not fully confirmed.':unknown.length?'some actions ran, but their results still need a direct check.':'all requested actions passed the available scene checks.');
+ return lines.join('\\n');
 }
 function studioFindObject(name){
   if(typeof name!=='string'||!name.trim())return null;
@@ -781,9 +819,9 @@ $('aiForm').addEventListener('submit',async e=>{
       aiAddMessage('assistant','made '+agentActions.length+' scene changes — checking the result…','verify');
       aiHistory.push({role:'assistant',content:agentReply},{role:'assistant',content:'Execution log: '+outcomes.join('; ')});saveAIChat();
       pending.textContent='changes executed. independently checking the actual scene…';aiState.textContent='verifying…';
-      const auditPrompt='Check the actual scene against what the user asked for. Do not execute actions. Be honest: successful object creation does not mean the requested model is finished. Use the before/after scene data and action results to identify what is genuinely there, what is missing, and any obvious mistakes. Do not invent visual observations; if the screenshot or scene data cannot confirm something, say so simply. Then speak directly to the user like a casual, helpful friend: relaxed, plain everyday language, mostly lowercase, short sentences. No robotic audit, no numbered action-by-action report, no coordinates, bounding-box jargon, tool names, or engineering terminology. Never dump the execution log. In 2–4 short sentences, say what got done, whether the actual request is finished, and the most important thing still missing or wrong. If the task is unfinished, say that plainly instead of acting like it is complete.\\nUSER REQUEST: '+message+'\\nCHANGES MADE: '+JSON.stringify(outcomes)+'\\nSCENE BEFORE: '+JSON.stringify(sceneBefore)+'\\nSCENE NOW: '+JSON.stringify(sceneAfter);
-      try{const ar=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:[{role:'user',content:auditPrompt}]})});const ad=await ar.json();if(!ar.ok||typeof ad.reply!=='string'||!ad.reply.trim())throw new Error('verification service unavailable');let report=ad.reply;try{const p=JSON.parse(report);if(p.reply)report=p.reply}catch(e){}aiAddMessage('assistant','independent scene check:\\n'+report,'verify');aiHistory.push({role:'assistant',content:'Independent verification: '+report});saveAIChat();aiState.textContent=failed.length?'completed with action errors':'scene check complete'}
-      catch(err){const report='Actions executed, but independent verification failed: '+err.message+'. The execution log is not proof of correctness.';aiAddMessage('assistant',report,'error');aiHistory.push({role:'assistant',content:report});saveAIChat();aiState.textContent='verification unavailable'}
+      const audit=studioVerifyActions(agentActions,sceneBefore,sceneAfter,outcomes),report=studioAuditMessage(audit);
+      aiAddMessage('assistant',report,'verify');aiHistory.push({role:'assistant',content:'Independent scene verification: '+report});saveAIChat();
+      aiState.textContent=audit.some(x=>x.status==='failed')?'verification found failures':audit.some(x=>x.status==='unverified')?'partially verified':'scene checks passed';
     }else{aiHistory.push({role:'assistant',content:data.reply});saveAIChat();aiState.textContent='gemini connected'}
     renderChatPicker();
   }catch(error){pending.remove();aiAddMessage('assistant',error.message,'error');aiState.textContent='connection issue'}
