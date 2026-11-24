@@ -169,7 +169,7 @@ try{
   geometry.computeVertexNormals();geometry.computeBoundingSphere();geometry.computeBoundingBox();
   selected.geometry.dispose();selected.geometry=geometry;
   editSelection=[];buildEditVisuals();
-  const topFace=faceLoops.length-1;
+  const topFace=output.faces.length-loop.length-1;
   if(topFace>=0)editSelection=[topFace];
   updateEditSelectionVisual();
   $('editInfo').textContent='Rust extrusion completed · '+distance.toFixed(2)+' units';
@@ -302,7 +302,7 @@ $('editModeBtn').onclick=()=>editMode?exitEdit():enterEdit();
 document.querySelectorAll('.side .section').forEach(section=>{const heading=section.querySelector('h3');if(!heading)return;const content=document.createElement('div');content.className='section-content';while(heading.nextSibling)content.appendChild(heading.nextSibling);const toggle=document.createElement('button');toggle.type='button';toggle.className='section-title';toggle.innerHTML='<span></span><span class="section-arrow" aria-hidden="true">▾</span>';toggle.firstChild.textContent=heading.textContent;toggle.setAttribute('aria-expanded','true');toggle.onclick=()=>{const collapsed=section.classList.toggle('collapsed');content.hidden=collapsed;toggle.setAttribute('aria-expanded',String(!collapsed))};section.insertBefore(toggle,heading);section.removeChild(heading);section.appendChild(content)});
 document.querySelectorAll('[data-component]').forEach(b=>b.onclick=()=>{componentMode=b.dataset.component;editSelection=[];activeEdgeIndex=-1;document.querySelectorAll('[data-component]').forEach(x=>x.classList.toggle('active',x===b));$('editInfo').textContent='tap '+componentMode+'s to select';if(editMode)buildEditVisuals()});
 document.querySelectorAll('[data-edit-axis]').forEach(b=>b.onclick=()=>applyComponentEdit(b.dataset.editAxis,Number(b.dataset.dir)));
-$('extrudeFaceBtn').onclick=async()=>{if(window.rustMeshKernelReady)await window.rustMeshKernelReady;extrudeSelectedFace()};
+$('extrudeFaceBtn').onclick=async()=>{const ready=window.rustMeshKernelReady?await window.rustMeshKernelReady:false;if(!ready){$('editInfo').textContent='Rust geometry engine is unavailable';return}try{extrudeSelectedFace()}catch(error){$('editInfo').textContent='Rust extrusion failed: '+error.message}};
 $('insetFaceBtn').onclick=insetSelectedFace;
 $('bevelEdgeBtn').onclick=bevelSelectedEdge;$('loopCutBtn').onclick=loopCutSelectedEdge;
 function addKey(){if(!selected)return;const t=Number($('time').value);keys[selected.uuid]??=[];const list=keys[selected.uuid],state={t,p:selected.position.toArray(),r:selected.rotation.toArray(),s:selected.scale.toArray()};const i=list.findIndex(k=>Math.abs(k.t-t)<.001);if(i>=0)list[i]=state;else list.push(state);list.sort((a,b)=>a.t-b.t);renderKeys()}
