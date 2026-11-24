@@ -19,7 +19,7 @@
 </style>
 </head>
 <body><div class="app">
-<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v89</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><button id="aiClearBtn" title="clear assistant chat">clear chat</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
+<header class="top"><div class="brand">◈ <span>3D</span> STUDIO <small style="font-size:9px;color:#9aa7bc">v90</small></div><button id="saveBtn">save</button><button id="importBtn">import</button><button id="exportBtn">export</button><button id="undoBtn" class="history-btn" aria-label="undo" title="undo">↶</button><button id="redoBtn" class="history-btn" aria-label="redo" title="redo">↷</button><button id="resetBtn">reset</button><button id="aiClearBtn" title="clear assistant chat">clear chat</button><select id="quality" aria-label="render quality"><option value="auto">⚡ auto</option><option value="performance">⚡ performance</option><option value="balanced">balanced</option><option value="high">high quality</option></select><input id="importFile" type="file" accept=".json,application/json" hidden><div class="status" id="status">starting renderer…</div></header>
 <main class="workspace"><section class="view"><canvas id="viewport"></canvas><div class="hint" id="hint">drag to orbit · pinch to zoom · tap an object to select</div><div class="toolbar"><button data-add="Box">＋ box</button><button data-add="Sphere">＋ sphere</button><button data-add="Cylinder">＋ cylinder</button><button data-add="Cone">＋ cone</button><button data-add="Torus">＋ torus</button><button id="focusBtn">focus</button></div></section>
 <aside class="side">
 <section class="section"><h3>scene objects</h3><div class="objects" id="objectList"></div><label>collections · organise your scene</label><div class="row"><select id="collectionSelect" aria-label="active collection"></select><button id="createCollectionBtn">＋ group</button></div><div class="grid2" style="margin-top:6px"><button id="assignCollectionBtn">move selection here</button><button id="renameCollectionBtn">rename group</button><button id="deleteCollectionBtn">delete group</button></div><div class="collection-list" id="collectionList"></div><div class="small">new objects go into the selected collection · use the eye button to hide or show a whole group</div><label for="parentSelect">parent selected object to</label><div class="row"><select id="parentSelect"><option value="">no parent · scene root</option></select><button id="unparentBtn">unparent</button></div><div class="small">parenting keeps the current world position; moving a parent also moves its children</div><div class="grid2" style="margin-top:7px"><button id="multiSelectBtn">multi-select: off</button><button id="clearSelectionBtn">clear selection</button><button id="duplicateBtn">duplicate</button><button id="deleteBtn">delete</button></div><div class="small" id="selectionInfo">select one object</div><div class="grid2" style="margin-top:7px"><button id="outlineVisibilityBtn">hide object outline</button><button id="outlineThicknessBtn">outline thickness: thin</button></div></section>
@@ -646,7 +646,18 @@ $('aiForm').addEventListener('submit',async e=>{
   try{
     const outgoing=aiHistory.map(m=>({...m})),sceneBefore=studioSceneContext();
     outgoing[outgoing.length-1].content=AI_AGENT_RULES+'\\n\\nCURRENT SCENE STATE (JSON): '+JSON.stringify(sceneBefore)+'\\n\\nUSER REQUEST: '+message;
-    const response=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:outgoing})});
+    let viewportImage=null;
+    try{
+      const sourceCanvas=renderer.domElement;
+      const maxSide=1280,ratio=Math.min(1,maxSide/Math.max(sourceCanvas.width,sourceCanvas.height));
+      const shot=document.createElement('canvas');
+      shot.width=Math.max(1,Math.round(sourceCanvas.width*ratio));
+      shot.height=Math.max(1,Math.round(sourceCanvas.height*ratio));
+      const ctx=shot.getContext('2d');
+      ctx.drawImage(sourceCanvas,0,0,shot.width,shot.height);
+      viewportImage=shot.toDataURL('image/jpeg',0.72);
+    }catch(imageError){console.warn('Viewport screenshot unavailable:',imageError)}
+    const response=await fetch(AI_ENDPOINT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:outgoing,...(viewportImage?{image:viewportImage}:{})})});
     const data=await response.json();if(!response.ok)throw new Error(data.error||('request failed · '+response.status));if(typeof data.reply!=='string'||!data.reply.trim())throw new Error('Gemini returned no reply');
     let agentReply=data.reply,agentActions=[];
     // Gemini may wrap valid action JSON in an explanation or markdown fence.
