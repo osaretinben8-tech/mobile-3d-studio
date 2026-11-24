@@ -438,9 +438,13 @@ function studioVerifyActions(actions,before,after,outcomes,snapshots){
   const name=a.name||a.object||previous.activeObject,now=newObjects.find(o=>o.name===name);
   let ok=null,evidence='operation ran, but no reliable postcondition is available yet';
   switch(a.type){
-   case 'create_object':case 'create_mesh':
-    ok=!!now&&newObjects.length>oldObjects.length;evidence=ok?('scene contains '+now.name+(now.geometry?' · '+now.geometry.vertexCount+' vertices · '+now.geometry.triangleCount+' triangles':'')):'requested new object is not present in the resulting scene';
-    if(a.type==='create_mesh'&&ok&&(!now.geometry||now.geometry.triangleCount<1)){ok=false;evidence='object exists but has no confirmed triangles'}break;
+   case 'create_object':case 'create_mesh':{
+    const added=newObjects.filter(o=>!oldObjects.some(p=>p.name===o.name));
+    const created=a.name?added.find(o=>o.name===a.name):added[added.length-1];
+    ok=!!created;evidence=ok?('scene contains '+created.name+(created.geometry?' · '+created.geometry.vertexCount+' vertices · '+created.geometry.triangleCount+' triangles':'')):'no newly created object is present in the resulting scene';
+    if(a.type==='create_mesh'&&ok&&(!created.geometry||created.geometry.triangleCount<1)){ok=false;evidence='object exists but has no confirmed triangles'}
+    break;
+   }
    case 'delete_object':ok=!newObjects.some(o=>o.name===(a.object||a.name));evidence=ok?'object is absent from the resulting scene':'object is still present';break;
    case 'rename_object':ok=!!newObjects.find(o=>o.name===a.name)&&!newObjects.some(o=>o.name===name&&name!==a.name);evidence=ok?'renamed object is present':'requested renamed object was not confirmed';break;
    case 'select_object':ok=current.activeObject===a.name;evidence='active object: '+String(current.activeObject);break;
