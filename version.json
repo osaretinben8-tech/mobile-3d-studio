@@ -1,5 +1,5 @@
 {
-  "version": "v99",
-  "build": "rust-wasm-face-extrusion-fix",
-  "release_notes": "Fix custom mesh geometry layout so face selection and Rust/WASM extrusion use matching triangle-corner topology."
+  "version": "v100",
+  "build": "truthful-scene-verification",
+  "release_notes": "AI action reports now verify supported postconditions against actual before/after scene state; unverified actions are explicitly labeled."
 }
