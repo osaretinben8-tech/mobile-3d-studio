@@ -658,7 +658,7 @@ $('aiForm').addEventListener('submit',async e=>{
         let depth=0,inString=false,escaped=false;
         for(let i=start;i<source.length;i++){
           const ch=source[i];
-          if(inString){if(escaped)escaped=false;else if(ch==='\\\\')escaped=true;else if(ch==='"')inString=false;continue}
+          if(inString){if(escaped)escaped=false;else if(ch==='\\')escaped=true;else if(ch==='"')inString=false;continue}
           if(ch==='"'){inString=true;continue}
           if(ch==='{')depth++;
           else if(ch==='}'&&--depth===0){candidates.push(source.slice(start,i+1));break}
@@ -667,7 +667,7 @@ $('aiForm').addEventListener('submit',async e=>{
       for(const candidate of candidates){try{const value=JSON.parse(candidate);if(value&&typeof value==='object'&&!Array.isArray(value)&&Array.isArray(value.actions))return {...value,truncated:false}}catch(e){}}
       // If Gemini hits its output limit, recover every fully closed action object
       // from the actions array instead of discarding the entire response.
-      const actionKey=source.search(/"actions"\\s*:\\s*\\[/);
+      const actionKey=source.search(/"actions"\s*:\s*\[/);
       if(actionKey>=0){
         const arrayStart=source.indexOf('[',actionKey),recovered=[];let depth=0,inString=false,escaped=false,start=-1;
         for(let i=arrayStart+1;i<source.length;i++){
