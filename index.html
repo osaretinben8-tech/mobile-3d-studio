@@ -123,58 +123,69 @@ $('editDebug').textContent='debug · '+edgeRecords.length+' edges · '+nearbyCan
 }
 function applyComponentEdit(axis,dir){if(!editMode||!selected||!editSelection.length)return;const op=$('editOperation').value,step=Number($('moveStep').value),p=selected.geometry.attributes.position;let ids=[];if(componentMode==='vertex')ids=editSelection.slice();else if(componentMode==='face')editSelection.forEach(f=>{if(faceRecords[f])ids.push(...faceRecords[f].ids)});else editSelection.forEach(ei=>{const e=edgeRecords[ei];if(e)ids.push(...e.idsA,...e.idsB)});ids=[...new Set(ids)];if(!ids.length)return;const weldedKeys=new Set(ids.map(i=>[p.getX(i),p.getY(i),p.getZ(i)].map(v=>v.toFixed(5)).join(',')));ids=[];for(let i=0;i<p.count;i++){const key=[p.getX(i),p.getY(i),p.getZ(i)].map(v=>v.toFixed(5)).join(',');if(weldedKeys.has(key))ids.push(i)}let cx=0,cy=0,cz=0;ids.forEach(i=>{cx+=p.getX(i);cy+=p.getY(i);cz+=p.getZ(i)});cx/=ids.length;cy/=ids.length;cz/=ids.length;const angle=Math.PI/12*dir,factor=Math.max(.1,1+step*dir);ids.forEach(i=>{let x=p.getX(i)-cx,y=p.getY(i)-cy,z=p.getZ(i)-cz;if(op==='move'){if(axis==='x')x+=step*dir;if(axis==='y')y+=step*dir;if(axis==='z')z+=step*dir}else if(op==='scale'){if(axis==='x')x*=factor;if(axis==='y')y*=factor;if(axis==='z')z*=factor}else{const c=Math.cos(angle),sn=Math.sin(angle);if(axis==='x')[y,z]=[y*c-z*sn,y*sn+z*c];if(axis==='y')[x,z]=[x*c+z*sn,-x*sn+z*c];if(axis==='z')[x,y]=[x*c-y*sn,x*sn+y*c]}p.setXYZ(i,x+cx,y+cy,z+cz)});p.needsUpdate=true;selected.geometry.computeVertexNormals();selected.geometry.computeBoundingSphere();clearSelectionOutlines();selectedObjects.forEach(o=>addSelectionOutline(o));buildEditVisuals();$('editInfo').textContent=editSelection.length+' '+componentMode+(editSelection.length===1?'':'s')+' selected'}
 function extrudeSelectedFace(){
-if(!editMode||componentMode!=='face'||!selected||editSelection.length!==1){$('editInfo').textContent='select exactly one face in face mode to extrude';return}
-const face=faceRecords[editSelection[0]],pos=selected.geometry.attributes.position;
-if(!face||!face.triangles?.length)return;
-try{
-  const vertices=[],vertexMap=new Map(),triangleFaces=[],selectedTriangles=new Set(face.triangles);
-  const vertexId=(index)=>{
-    const point=[pos.getX(index),pos.getY(index),pos.getZ(index)],key=point.map(v=>v.toFixed(6)).join(',');
-    if(!vertexMap.has(key)){vertexMap.set(key,vertices.length);vertices.push(point)}
-    return vertexMap.get(key);
-  };
-  const boundary=new Map();
-  face.triangles.forEach(ti=>{
-    const base=ti*3,ids=[vertexId(base),vertexId(base+1),vertexId(base+2)];
-    for(let j=0;j<3;j++){const a=ids[j],b=ids[(j+1)%3],key=a<b?a+':'+b:b+':'+a;const edge=boundary.get(key);if(edge)edge.count++;else boundary.set(key,{a,b,count:1})}
-  });
-  const edges=[...boundary.values()].filter(e=>e.count===1);
-  if(edges.length<3)throw new Error('selected face has no closed boundary');
-  const remaining=edges.slice(),loop=[remaining.shift().a];let current=loop[0],guard=0;
-  while(remaining.length&&guard++<edges.length+1){
-    let at=remaining.findIndex(e=>e.a===current);
-    if(at>=0){const e=remaining.splice(at,1)[0];current=e.b;loop.push(current);continue}
-    at=remaining.findIndex(e=>e.b===current);
-    if(at>=0){const e=remaining.splice(at,1)[0];current=e.a;loop.push(current);continue}
-    throw new Error('selected face boundary is disconnected');
-  }
-  if(remaining.length||loop[loop.length-1]!==loop[0])throw new Error('selected face has multiple boundary loops');
-  loop.pop();
-  const faceTriangles=Math.floor(pos.count/3);
-  for(let t=0;t<faceTriangles;t++)if(!selectedTriangles.has(t))triangleFaces.push([vertexId(t*3),vertexId(t*3+1),vertexId(t*3+2)]);
-  triangleFaces.push(loop);
-  const mesh={vertices,faces:triangleFaces};
-  const faceIndex=triangleFaces.length-1,distance=Number($('moveStep').value)||.25;
-  const output=JSON.parse(rustMeshRequest({operation:'extrude',mesh,face:faceIndex,distance}));
-  const positions=[],faceLoops=[];
-  output.faces.forEach((polygon,fi)=>{
-    const triangles=JSON.parse(rustMeshRequest({operation:'triangulate',mesh:output,face:fi}));
-    const start=positions.length/9;
-    triangles.forEach(tri=>tri.forEach(index=>positions.push(...output.vertices[index])));
-    faceLoops.push({triangleStart:start,triangleCount:triangles.length});
-  });
-  const geometry=new THREE.BufferGeometry();
-  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  geometry.userData.faceLoops=faceLoops;
-  geometry.computeVertexNormals();geometry.computeBoundingSphere();geometry.computeBoundingBox();
-  selected.geometry.dispose();selected.geometry=geometry;
-  editSelection=[];buildEditVisuals();
-  const topFace=output.faces.length-loop.length-1;
-  if(topFace>=0)editSelection=[topFace];
-  updateEditSelectionVisual();
-  $('editInfo').textContent='Rust extrusion completed · '+distance.toFixed(2)+' units';
-  $('editDebug').textContent='Rust mesh · '+output.vertices.length+' vertices · '+output.faces.length+' faces';
-}catch(error){$('editInfo').textContent='Rust extrusion failed: '+error.message;throw error}
+ if(!editMode||componentMode!=='face'||!selected||editSelection.length!==1){$('editInfo').textContent='select exactly one face in face mode to extrude';return}
+ const face=faceRecords[editSelection[0]],pos=selected.geometry.attributes.position;
+ if(!face||!face.triangles?.length)return;
+ try{
+   // Custom meshes retain their original polygon topology. Use that source of
+   // truth rather than trying to rediscover a quad from its rendered triangles.
+   const stored=selected.geometry.userData?.meshTopology;
+   let mesh,faceIndex;
+   if(stored&&Array.isArray(stored.vertices)&&Array.isArray(stored.faces)){
+     mesh={vertices:stored.vertices.map(v=>v.slice()),faces:stored.faces.map(f=>f.slice())};
+     faceIndex=editSelection[0];
+     if(!mesh.faces[faceIndex])throw new Error('selected face is missing from stored mesh topology');
+   }else{
+     const vertices=[],vertexMap=new Map(),triangleFaces=[],selectedTriangles=new Set(face.triangles);
+     const vertexId=index=>{
+       const point=[pos.getX(index),pos.getY(index),pos.getZ(index)],key=point.map(v=>v.toFixed(6)).join(',');
+       if(!vertexMap.has(key)){vertexMap.set(key,vertices.length);vertices.push(point)}
+       return vertexMap.get(key);
+     };
+     const boundary=new Map();
+     face.triangles.forEach(ti=>{
+       const base=ti*3,ids=[vertexId(base),vertexId(base+1),vertexId(base+2)];
+       for(let j=0;j<3;j++){const a=ids[j],b=ids[(j+1)%3],key=a<b?a+':'+b:b+':'+a;const edge=boundary.get(key);if(edge)edge.count++;else boundary.set(key,{a,b,count:1})}
+     });
+     const edges=[...boundary.values()].filter(e=>e.count===1);
+     if(edges.length<3)throw new Error('selected face has no closed boundary');
+     const remaining=edges.slice(),loop=[remaining.shift().a];let current=loop[0],guard=0;
+     while(remaining.length&&guard++<edges.length+1){
+       let at=remaining.findIndex(e=>e.a===current);
+       if(at>=0){const e=remaining.splice(at,1)[0];current=e.b;loop.push(current);continue}
+       at=remaining.findIndex(e=>e.b===current);
+       if(at>=0){const e=remaining.splice(at,1)[0];current=e.a;loop.push(current);continue}
+       throw new Error('selected face boundary is disconnected');
+     }
+     if(remaining.length||loop[loop.length-1]!==loop[0])throw new Error('selected face has multiple boundary loops');
+     loop.pop();
+     for(let t=0;t<Math.floor(pos.count/3);t++)if(!selectedTriangles.has(t))triangleFaces.push([vertexId(t*3),vertexId(t*3+1),vertexId(t*3+2)]);
+     triangleFaces.push(loop);mesh={vertices,faces:triangleFaces};faceIndex=triangleFaces.length-1;
+   }
+   const distance=Number($('moveStep').value)||.25;
+   const output=JSON.parse(rustMeshRequest({operation:'extrude',mesh,face:faceIndex,distance}));
+   const validation=JSON.parse(rustMeshRequest({operation:'inspect',mesh:output}));
+   if(!validation.valid)throw new Error('Rust rejected extruded topology: '+validation.issues.join('; '));
+   const positions=[],faceLoops=[];
+   output.faces.forEach((polygon,fi)=>{
+     const triangles=JSON.parse(rustMeshRequest({operation:'triangulate',mesh:output,face:fi}));
+     const triangleStart=positions.length/9;
+     triangles.forEach(tri=>tri.forEach(index=>positions.push(...output.vertices[index])));
+     faceLoops.push({triangleStart,triangleCount:triangles.length});
+   });
+   const geometry=new THREE.BufferGeometry();
+   geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+   geometry.userData.faceLoops=faceLoops;
+   geometry.userData.meshTopology={vertices:output.vertices.map(v=>v.slice()),faces:output.faces.map(f=>f.slice())};
+   geometry.computeVertexNormals();geometry.computeBoundingSphere();geometry.computeBoundingBox();
+   selected.geometry.dispose();selected.geometry=geometry;
+   editSelection=[];buildEditVisuals();
+   const topFace=output.faces.length-(mesh.faces[faceIndex].length)-1;
+   if(topFace>=0)editSelection=[topFace];
+   updateEditSelectionVisual();
+   $('editInfo').textContent='Rust extrusion completed · '+distance.toFixed(2)+' units · '+validation.vertices+' vertices · '+validation.faces+' faces';
+   $('editDebug').textContent='Rust mesh validated · '+validation.edges+' edges · '+validation.boundary_edges+' boundary edges';
+ }catch(error){$('editInfo').textContent='Rust extrusion failed: '+error.message;throw error}
 }
 function insetSelectedFace(){
 if(!editMode||componentMode!=='face'||!selected||editSelection.length!==1){$('editInfo').textContent='select exactly one face in face mode to inset';return}
@@ -573,7 +584,7 @@ function studioRunActions(actions){
             // Edit-mode component tools operate on triangle-corner positions. Expand
             // indexed custom meshes so face selection and extrusion share one layout.
             geometry.setAttribute('position',new THREE.Float32BufferAttribute(expandedPositions,3));
-            geometry.userData.faceLoops=faceLoops;geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
+            geometry.userData.faceLoops=faceLoops;geometry.userData.meshTopology={vertices:verts.map(v=>v.slice()),faces:a.faces.map(face=>face.slice())};geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
             const material=new THREE.MeshPhysicalMaterial({color:/^#[0-9a-fA-F]{6}$/.test(a.color||'')?a.color:'#9aa0a8',roughness:Number.isFinite(a.roughness)?Math.max(0,Math.min(1,a.roughness)):.78,metalness:Number.isFinite(a.metalness)?Math.max(0,Math.min(1,a.metalness)):0});
             target=new THREE.Mesh(geometry,material);target.castShadow=true;target.receiveShadow=true;
             target.userData.name=(typeof a.name==='string'&&a.name.trim()?a.name.trim():'Custom Mesh').slice(0,48);
