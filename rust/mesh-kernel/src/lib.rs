@@ -81,7 +81,7 @@ pub fn extrude_face(mesh:&Mesh, face_index:usize, distance:f64)->Result<Mesh,Str
 }
 
 fn project(p:[f64;3],axis:usize)->[f64;2]{match axis{0=>[p[1],p[2]],1=>[p[0],p[2]],_=>[p[0],p[1]]}}
-fn area2(points:&[[f64;2]])->f64{let mut a=0.0;for i in 0..points.len(){let p=points[i];let q=points[(i+1)%points.len()];a+=p[0]*q[1]-q[0]*p[1]}a*.5}
+fn area2(points:&[[f64;2]])->f64{let mut a=0.0;for i in 0..points.len(){let p=points[i];let q=points[(i+1)%points.len()];a+=p[0]*q[1]-q[0]*p[1]}a*0.5}
 fn orient(a:[f64;2],b:[f64;2],c:[f64;2])->f64{(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])}
 fn inside(p:[f64;2],a:[f64;2],b:[f64;2],c:[f64;2],sign:f64)->bool{
     orient(a,b,p)*sign>=-1e-10 && orient(b,c,p)*sign>=-1e-10 && orient(c,a,p)*sign>=-1e-10
