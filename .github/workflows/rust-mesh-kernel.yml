@@ -1,4 +1,4 @@
-name: Rust mesh kernel checks
+name: Rust mesh kernel checks and WebAssembly package
 on:
   push:
     paths:
@@ -9,8 +9,38 @@ on:
       - 'rust/**'
       - '.github/workflows/rust-mesh-kernel.yml'
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   test-and-build:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: jetli/wasm-pack-action@v0.4.0
+        with:
+          version: latest
+      - name: Run native geometry tests
+        working-directory: rust/mesh-kernel
+        run: cargo test
+      - name: Build browser WebAssembly package
+        working-directory: rust/mesh-kernel
+        run: wasm-pack build --release --target web --out-dir ../../wasm/pkg
+      - name: Publish generated browser package
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add wasm/pkg
+          if ! git diff --cached --quiet; then
+            git commit -m "Build Rust mesh kernel WebAssembly package"
+            git push
+          fi
+  pull-request-check:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +51,6 @@ jobs:
       - name: Run native geometry tests
         working-directory: rust/mesh-kernel
         run: cargo test
-      - name: Build WebAssembly module
+      - name: Check WebAssembly compilation
         working-directory: rust/mesh-kernel
         run: cargo build --release --target wasm32-unknown-unknown
