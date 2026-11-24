@@ -129,5 +129,23 @@ mod tests{
     #[test]fn validates_quad(){let r=validate(&quad()).unwrap();assert_eq!(r.edges,4);assert_eq!(r.boundary_edges,4);assert!(r.valid)}
     #[test]fn triangulates_quad(){let t=triangulate_face(&quad(),0).unwrap();assert_eq!(t.len(),2)}
     #[test]fn extrudes_quad_as_connected_prism(){let m=extrude_face(&quad(),0,0.5).unwrap();assert_eq!(m.vertices.len(),8);assert_eq!(m.faces.len(),5);assert_eq!(validate(&m).unwrap().non_manifold_edges,0)}
+    #[test]fn extrudes_closed_cube_face_without_non_manifold_edges(){
+        let mesh=Mesh{
+            vertices:vec![
+                [-1.,-1.,-1.],[1.,-1.,-1.],[1.,1.,-1.],[-1.,1.,-1.],
+                [-1.,-1.,1.],[1.,-1.,1.],[1.,1.,1.],[-1.,1.,1.]
+            ],
+            faces:vec![
+                vec![0,3,2,1],vec![4,5,6,7],vec![0,1,5,4],
+                vec![1,2,6,5],vec![2,3,7,6],vec![3,0,4,7]
+            ]
+        };
+        let result=extrude_face(&mesh,1,0.5).unwrap();
+        let report=validate(&result).unwrap();
+        assert!(report.valid,"{:?}",report.issues);
+        assert_eq!(report.boundary_edges,0);
+        assert_eq!(report.non_manifold_edges,0);
+        assert_eq!(result.faces.len(),10);
+    }
     #[test]fn rejects_invalid_index(){let m=Mesh{vertices:vec![[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]],faces:vec![vec![0,1,9]]};assert!(validate(&m).is_err())}
 }
