@@ -1,5 +1,5 @@
 {
-  "version": "v100",
-  "build": "truthful-scene-verification",
-  "release_notes": "AI action reports now verify supported postconditions against actual before/after scene state; unverified actions are explicitly labeled."
+  "version": "v101",
+  "build": "rust-topology-preserving-extrusion",
+  "release_notes": "Custom meshes now retain original polygon topology through edit mode; Rust validates the extruded mesh and triangulates the resulting faces before rendering."
 }
