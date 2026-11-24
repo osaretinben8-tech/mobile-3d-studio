@@ -664,16 +664,31 @@ $('aiForm').addEventListener('submit',async e=>{
           else if(ch==='}'&&--depth===0){candidates.push(source.slice(start,i+1));break}
         }
       }
-      for(const candidate of candidates){try{const value=JSON.parse(candidate);if(value&&typeof value==='object'&&!Array.isArray(value)&&Array.isArray(value.actions))return value}catch(e){}}
+      for(const candidate of candidates){try{const value=JSON.parse(candidate);if(value&&typeof value==='object'&&!Array.isArray(value)&&Array.isArray(value.actions))return {...value,truncated:false}}catch(e){}}
+      // If Gemini hits its output limit, recover every fully closed action object
+      // from the actions array instead of discarding the entire response.
+      const actionKey=source.search(/"actions"\\s*:\\s*\\[/);
+      if(actionKey>=0){
+        const arrayStart=source.indexOf('[',actionKey),recovered=[];let depth=0,inString=false,escaped=false,start=-1;
+        for(let i=arrayStart+1;i<source.length;i++){
+          const ch=source[i];
+          if(inString){if(escaped)escaped=false;else if(ch==='\\\\')escaped=true;else if(ch==='"')inString=false;continue}
+          if(ch==='"'){inString=true;continue}
+          if(ch==='{'){if(depth===0)start=i;depth++}
+          else if(ch==='}'&&depth>0){depth--;if(depth===0&&start>=0){try{const item=JSON.parse(source.slice(start,i+1));if(item&&typeof item==='object'&&!Array.isArray(item))recovered.push(item)}catch(e){}start=-1}}
+          else if(ch===']'&&depth===0)break;
+        }
+        if(recovered.length)return {reply:'The response was cut off, but I recovered and am executing '+recovered.length+' complete actions. I may need to continue the remaining task afterward.',actions:recovered,truncated:true};
+      }
       return null;
     }
-    const parsedAgent=findAgentPayload(data.reply);
-    if(parsedAgent){agentActions=parsedAgent.actions;if(typeof parsedAgent.reply==='string')agentReply=parsedAgent.reply;else agentReply='I generated scene actions and am executing them now.'}
+    const parsedAgent=findAgentPayload(data.reply);let partialPayload=false;
+    if(parsedAgent){agentActions=parsedAgent.actions;partialPayload=!!parsedAgent.truncated;if(typeof parsedAgent.reply==='string')agentReply=parsedAgent.reply;else agentReply='I generated scene actions and am executing them now.'}
     pending.textContent=agentReply;
     if(agentActions.length){
       let outcomes=[];try{outcomes=studioRunActions(agentActions)}catch(err){outcomes=['not applied: '+err.message]}
       const sceneAfter=studioSceneContext(),failed=outcomes.filter(x=>x.startsWith('not applied:'));
-      aiAddMessage('assistant','execution log ('+agentActions.length+' actions):\\n'+outcomes.map((x,i)=>(i+1)+'. '+x).join('\\n'),'verify');
+      aiAddMessage('assistant','execution log ('+agentActions.length+' actions):\\n'+outcomes.map((x,i)=>(i+1)+'. '+x).join('\\n')+(partialPayload?'\\n\\nWARNING: Gemini response was truncated. Complete actions above were recovered and executed; the remaining actions were not received. Send “continue the castle build” to resume from the current scene.':''),'verify');
       aiHistory.push({role:'assistant',content:agentReply},{role:'assistant',content:'Execution log: '+outcomes.join('; ')});saveAIChat();
       pending.textContent='changes executed. independently checking the actual scene…';aiState.textContent='verifying…';
       const auditPrompt='You are an independent 3D editor quality inspector. Do not execute actions. Compare the requested result with before/after scene data and execution log. Inspect geometry counts, component coordinates, bounding boxes, positions, dimensions, normals where present, selection, material, camera and animation state. A successful return value is NOT proof of semantic correctness. Identify each action as CONFIRMED, FAILED, INCORRECT RESULT, or NEEDS VISUAL CHECK. For each issue state exact action/button, expected result, observed result and uncertainty. Pay special attention to loop cuts, bevel, inset and extrusion orientation/direction. If available data cannot establish correctness, explicitly say it needs visual check. Never invent observations.\\nREQUEST: '+message+'\\nACTIONS: '+JSON.stringify(agentActions)+'\\nEXECUTION LOG: '+JSON.stringify(outcomes)+'\\nBEFORE: '+JSON.stringify(sceneBefore)+'\\nAFTER: '+JSON.stringify(sceneAfter);
