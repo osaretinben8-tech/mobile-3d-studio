@@ -468,7 +468,7 @@ function studioAuditMessage(items){
  if(failed.length)lines.push('failed: '+failed.map(x=>x.action+' ('+x.evidence+')').join('; '));
  if(unknown.length)lines.push('not verified: '+unknown.map(x=>x.action).join(', '));
  lines.push(failed.length?'the requested workflow is not fully confirmed.':unknown.length?'some actions ran, but their results still need a direct check.':'all requested actions passed the available scene checks.');
- return lines.join('\\n');
+ return lines.join('\n');
 }
 function studioFindObject(name){
   if(typeof name!=='string'||!name.trim())return null;
