@@ -20,7 +20,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Run native geometry tests
         working-directory: rust/mesh-kernel
-        run: cargo test --locked
+        run: cargo test
       - name: Build WebAssembly module
         working-directory: rust/mesh-kernel
-        run: cargo build --release --target wasm32-unknown-unknown --locked
+        run: cargo build --release --target wasm32-unknown-unknown
