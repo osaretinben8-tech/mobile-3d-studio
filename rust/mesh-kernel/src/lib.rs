@@ -72,7 +72,7 @@ pub fn extrude_face(mesh:&Mesh, face_index:usize, distance:f64)->Result<Mesh,Str
     if !distance.is_finite()||distance.abs()<1e-8||distance.abs()>1000.0{return Err("extrusion distance must be between 0.00000001 and 1000".into())}
     let face=mesh.faces.get(face_index).ok_or("selected face index is out of range")?;
     let normal=face_normal(mesh,face)?;
-    let mut out=mesh.clone();let mut top=Vec::with_capacity(face.len());
+    let mut out=mesh.clone();out.faces.remove(face_index);let mut top=Vec::with_capacity(face.len());
     for &idx in face {let p=add(mesh.vertices[idx],mul(normal,distance));top.push(out.vertices.len());out.vertices.push(p);}
     out.faces.push(top.clone());
     for i in 0..face.len(){let j=(i+1)%face.len();out.faces.push(vec![face[i],face[j],top[j],top[i]]);}
@@ -128,6 +128,6 @@ mod tests{
     fn quad()->Mesh{Mesh{vertices:vec![[0.,0.,0.],[1.,0.,0.],[1.,1.,0.],[0.,1.,0.]],faces:vec![vec![0,1,2,3]]}}
     #[test]fn validates_quad(){let r=validate(&quad()).unwrap();assert_eq!(r.edges,4);assert_eq!(r.boundary_edges,4);assert!(r.valid)}
     #[test]fn triangulates_quad(){let t=triangulate_face(&quad(),0).unwrap();assert_eq!(t.len(),2)}
-    #[test]fn extrudes_quad_as_connected_prism(){let m=extrude_face(&quad(),0,0.5).unwrap();assert_eq!(m.vertices.len(),8);assert_eq!(m.faces.len(),6);assert_eq!(validate(&m).unwrap().non_manifold_edges,0)}
+    #[test]fn extrudes_quad_as_connected_prism(){let m=extrude_face(&quad(),0,0.5).unwrap();assert_eq!(m.vertices.len(),8);assert_eq!(m.faces.len(),5);assert_eq!(validate(&m).unwrap().non_manifold_edges,0)}
     #[test]fn rejects_invalid_index(){let m=Mesh{vertices:vec![[0.,0.,0.],[1.,0.,0.],[0.,1.,0.]],faces:vec![vec![0,1,9]]};assert!(validate(&m).is_err())}
 }
