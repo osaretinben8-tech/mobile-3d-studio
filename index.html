@@ -424,13 +424,18 @@ function studioSceneContext(){
     groundPlaneY:-1.02,settings:{moveStep:Number($('moveStep').value)},capabilities:['create_object','create_mesh','select_object','transform_selected','animate_object','set_material','rename_object','duplicate_selected','delete_object','delete_objects_by_type','set_visibility','set_background','set_lighting','focus_selected','undo','redo','enter_edit_mode','exit_edit_mode','set_component_mode','select_mesh_component','edit_mesh_component','extrude_face','inset_face','bevel_edge','loop_cut','add_keyframe','add_camera_keyframe','set_time','set_playback','set_playback_speed','set_easing','home_camera','set_camera_pose','set_grid_visibility','create_collection','rename_collection','assign_collection','set_collection_visibility','parent_object','unparent_object','set_active_collection','delete_collection','set_multi_select','clear_selection','set_outline_visibility','set_outline_thickness','set_render_quality','go_to_next_keyframe','go_to_previous_keyframe','set_move_step','clear_object_keyframes','clear_camera_keyframes','set_material_preset'],editMode:editState,collections:collections.map(c=>({id:c.id,name:c.name,visible:c.visible,objectCount:objects.filter(o=>o.userData.collectionId===c.id).length})),animation:{durationSeconds:duration,currentTime:Number($('time').value),easing:$('easing').value,playbackSpeed,playing,objectsWithKeyframes:objects.filter(o=>(keys[o.uuid]||[]).length).map(o=>({name:o.userData.name,keyframeCount:keys[o.uuid].length}))}
   };
 }
-function studioVerifyActions(actions,before,after,outcomes){
- const oldObjects=before.objects||[],newObjects=after.objects||[];
+function studioActionSnapshot(){
+ const list=objects.map(o=>({name:o.userData.name||'Object',visible:o.visible,position:o.position.toArray(),rotationDegrees:[o.rotation.x,o.rotation.y,o.rotation.z].map(v=>v*180/Math.PI),scale:o.scale.toArray(),color:'#'+o.material.color.getHexString(),roughness:o.material.roughness??.5,metalness:o.material.metalness??0,geometry:o.geometry?.attributes?.position?{vertexCount:o.geometry.attributes.position.count,triangleCount:Math.floor((o.geometry.index?.count||o.geometry.attributes.position.count)/3)}:null}));
+ const p=selected?.geometry?.attributes?.position;
+ return {objects:list,activeObject:selected?.userData?.name||null,meshInspection:p?{object:selected.userData.name||'Object',vertexCount:p.count,triangleCount:Math.floor(p.count/3)}:null,editMode:{active:editMode,componentMode,selectedComponentIndices:editSelection.slice(),vertexCount:editMode&&p?p.count:0,edgeCount:editMode?edgeRecords.length:0,faceCount:editMode?faceRecords.length:0},settings:{moveStep:Number($('moveStep').value)}};
+}
+function studioVerifyActions(actions,before,after,outcomes,snapshots){
  const near=(a,b)=>Array.isArray(a)&&Array.isArray(b)&&a.length===b.length&&a.every((v,i)=>Math.abs(v-b[i])<0.015);
  return actions.map((a,i)=>{
-  const log=outcomes[i]||'no execution result';
+  const log=outcomes[i]||'no execution result',current=snapshots[i]||after,previous=i===0?before:(snapshots[i-1]||before);
+  const oldObjects=previous.objects||[],newObjects=current.objects||[];
   if(log.startsWith('not applied:'))return {action:a.type,status:'failed',evidence:log};
-  const name=a.name||a.object||before.activeObject,now=newObjects.find(o=>o.name===name);
+  const name=a.name||a.object||previous.activeObject,now=newObjects.find(o=>o.name===name);
   let ok=null,evidence='operation ran, but no reliable postcondition is available yet';
   switch(a.type){
    case 'create_object':case 'create_mesh':
@@ -438,14 +443,14 @@ function studioVerifyActions(actions,before,after,outcomes){
     if(a.type==='create_mesh'&&ok&&(!now.geometry||now.geometry.triangleCount<1)){ok=false;evidence='object exists but has no confirmed triangles'}break;
    case 'delete_object':ok=!newObjects.some(o=>o.name===(a.object||a.name));evidence=ok?'object is absent from the resulting scene':'object is still present';break;
    case 'rename_object':ok=!!newObjects.find(o=>o.name===a.name)&&!newObjects.some(o=>o.name===name&&name!==a.name);evidence=ok?'renamed object is present':'requested renamed object was not confirmed';break;
-   case 'select_object':ok=after.activeObject===a.name;evidence='active object: '+String(after.activeObject);break;
+   case 'select_object':ok=current.activeObject===a.name;evidence='active object: '+String(current.activeObject);break;
    case 'transform_selected':ok=!!now&&(!a.position||near(now.position,a.position))&&(!a.rotation_degrees||near(now.rotationDegrees,a.rotation_degrees))&&(!a.scale||near(now.scale,a.scale));evidence=ok?'requested transform values match the resulting scene':'resulting transform does not match the requested values';break;
-   case 'set_move_step':ok=Math.abs((after.settings?.moveStep??NaN)-Number(a.step))<1e-6;evidence='move step is '+String(after.settings?.moveStep);break;
-   case 'enter_edit_mode':ok=after.editMode?.active===true;evidence='edit mode '+(ok?'is active':'is not active');break;
-   case 'exit_edit_mode':ok=after.editMode?.active===false;evidence='edit mode '+(ok?'is inactive':'is still active');break;
-   case 'set_component_mode':ok=after.editMode?.componentMode===a.mode;evidence='component mode is '+String(after.editMode?.componentMode);break;
-   case 'select_mesh_component':ok=after.editMode?.selectedComponentIndices?.includes(Number(a.index))===true&&after.editMode?.componentMode===a.mode;evidence=ok?'requested component index is selected':'requested component selection is not present';break;
-   case 'extrude_face':ok=!!before.meshInspection&&!!after.meshInspection&&after.meshInspection.object===before.meshInspection.object&&after.meshInspection.vertexCount>before.meshInspection.vertexCount;evidence=ok?'mesh vertex count increased from '+before.meshInspection.vertexCount+' to '+after.meshInspection.vertexCount:'no confirmed mesh vertex increase after extrusion';break;
+   case 'set_move_step':ok=Math.abs((current.settings?.moveStep??NaN)-Number(a.step))<1e-6;evidence='move step is '+String(current.settings?.moveStep);break;
+   case 'enter_edit_mode':ok=current.editMode?.active===true;evidence='edit mode '+(ok?'is active':'is not active');break;
+   case 'exit_edit_mode':ok=current.editMode?.active===false;evidence='edit mode '+(ok?'is inactive':'is still active');break;
+   case 'set_component_mode':ok=current.editMode?.componentMode===a.mode;evidence='component mode is '+String(current.editMode?.componentMode);break;
+   case 'select_mesh_component':ok=current.editMode?.selectedComponentIndices?.includes(Number(a.index))===true&&current.editMode?.componentMode===a.mode;evidence=ok?'requested component index is selected':'requested component selection is not present';break;
+   case 'extrude_face':ok=!!previous.meshInspection&&!!current.meshInspection&&current.meshInspection.object===previous.meshInspection.object&&current.meshInspection.vertexCount>previous.meshInspection.vertexCount;evidence=ok?'mesh vertex count increased from '+previous.meshInspection.vertexCount+' to '+current.meshInspection.vertexCount:'no confirmed mesh vertex increase after extrusion';break;
    case 'set_visibility':ok=!!now&&now.visible===a.visible;evidence=ok?'visibility matches request':'visibility does not match request';break;
    case 'set_material':ok=!!now&&(!a.color||now.color.toLowerCase()===a.color.toLowerCase())&&(!Number.isFinite(a.roughness)||Math.abs(now.roughness-a.roughness)<.015)&&(!Number.isFinite(a.metalness)||Math.abs(now.metalness-a.metalness)<.015);evidence=ok?'requested material properties match the scene':'material properties do not match the request';break;
   }
@@ -513,7 +518,7 @@ function rustMeshRequest(request){
 function studioRunActions(actions){
   if(!Array.isArray(actions)||actions.length>200)throw new Error('the agent may run up to 200 scene actions at once');
   actions=actions.map(studioNormalizeAction);
-  const results=[];
+  const results=[],snapshots=[];
   if(!actions.length)return results;
   const historyOnly=actions.every(a=>a.type==='undo'||a.type==='redo');
   if(!historyOnly)captureHistoryBefore();
@@ -721,10 +726,12 @@ function studioRunActions(actions){
           default:throw new Error('action not allowed: '+a.type);
         }
       }catch(error){results.push('not applied: '+error.message)}
+      snapshots.push(studioActionSnapshot());
     }
   }finally{
     renderList();renderTransform();commitHistory();
   }
+  results.snapshots=snapshots;
   return results;
 }
 
@@ -819,7 +826,7 @@ $('aiForm').addEventListener('submit',async e=>{
       aiAddMessage('assistant','made '+agentActions.length+' scene changes — checking the result…','verify');
       aiHistory.push({role:'assistant',content:agentReply},{role:'assistant',content:'Execution log: '+outcomes.join('; ')});saveAIChat();
       pending.textContent='changes executed. independently checking the actual scene…';aiState.textContent='verifying…';
-      const audit=studioVerifyActions(agentActions,sceneBefore,sceneAfter,outcomes),report=studioAuditMessage(audit);
+      const audit=studioVerifyActions(agentActions,sceneBefore,sceneAfter,outcomes,outcomes.snapshots||[]),report=studioAuditMessage(audit);
       aiAddMessage('assistant',report,'verify');aiHistory.push({role:'assistant',content:'Independent scene verification: '+report});saveAIChat();
       aiState.textContent=audit.some(x=>x.status==='failed')?'verification found failures':audit.some(x=>x.status==='unverified')?'partially verified':'scene checks passed';
     }else{aiHistory.push({role:'assistant',content:data.reply});saveAIChat();aiState.textContent='gemini connected'}
