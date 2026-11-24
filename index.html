@@ -512,15 +512,17 @@ function studioRunActions(actions){
             const rustMesh={vertices:verts,faces:a.faces};
             const report=JSON.parse(rustMeshRequest({operation:'inspect',mesh:rustMesh}));
             if(!report.valid)throw new Error('Rust mesh validation failed: '+report.issues.join('; '));
-            const indices=[];
+            const indices=[],faceLoops=[];
             for(let fi=0;fi<a.faces.length;fi++){
               const triangles=JSON.parse(rustMeshRequest({operation:'triangulate',mesh:rustMesh,face:fi}));
+              const triangleStart=indices.length/3;
               triangles.forEach(triangle=>indices.push(...triangle));
+              faceLoops.push({triangleStart,triangleCount:triangles.length});
             }
             if(indices.length>9000)throw new Error('custom mesh is too dense; use fewer faces');
             const geometry=new THREE.BufferGeometry();
             geometry.setAttribute('position',new THREE.Float32BufferAttribute(verts.flat(),3));
-            geometry.setIndex(indices);geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
+            geometry.setIndex(indices);geometry.userData.faceLoops=faceLoops;geometry.computeVertexNormals();geometry.computeBoundingBox();geometry.computeBoundingSphere();
             const material=new THREE.MeshPhysicalMaterial({color:/^#[0-9a-fA-F]{6}$/.test(a.color||'')?a.color:'#9aa0a8',roughness:Number.isFinite(a.roughness)?Math.max(0,Math.min(1,a.roughness)):.78,metalness:Number.isFinite(a.metalness)?Math.max(0,Math.min(1,a.metalness)):0});
             target=new THREE.Mesh(geometry,material);target.castShadow=true;target.receiveShadow=true;
             target.userData.name=(typeof a.name==='string'&&a.name.trim()?a.name.trim():'Custom Mesh').slice(0,48);
