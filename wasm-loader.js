@@ -6,6 +6,8 @@ window.rustMeshKernelReady = (async () => {
     window.rustMeshKernel = module.process_mesh_json;
     window.rustMeshKernelError = null;
     document.documentElement.dataset.rustMeshKernel = 'ready';
+    const status = document.getElementById('status');
+    if (status) status.textContent += ' · rust mesh ready';
     return true;
   } catch (error) {
     window.rustMeshKernelError = error;
