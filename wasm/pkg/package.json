@@ -1,0 +1,16 @@
+{
+  "name": "mobile-3d-mesh-kernel",
+  "type": "module",
+  "description": "Topology-aware mesh operations for Mobile 3D Studio",
+  "version": "0.1.0",
+  "files": [
+    "mobile_3d_mesh_kernel_bg.wasm",
+    "mobile_3d_mesh_kernel.js",
+    "mobile_3d_mesh_kernel.d.ts"
+  ],
+  "main": "mobile_3d_mesh_kernel.js",
+  "types": "mobile_3d_mesh_kernel.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
