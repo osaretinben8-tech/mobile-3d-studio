@@ -1,5 +1,5 @@
 {
-  "version": "v98",
-  "build": "rust-wasm-mesh-kernel",
-  "release_notes": "Rust/WASM mesh validation, polygon triangulation and connected face extrusion are integrated."
+  "version": "v99",
+  "build": "rust-wasm-face-extrusion-fix",
+  "release_notes": "Fix custom mesh geometry layout so face selection and Rust/WASM extrusion use matching triangle-corner topology."
 }
